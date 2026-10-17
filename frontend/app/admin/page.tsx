@@ -138,6 +138,11 @@ export default function AdminPage() {
                         {l.nome}
                       </Link>
                       {!l.ativa && <span className="ml-2 text-xs text-gray-500">(inativa — fora do painel)</span>}
+                      {(l.especiais ?? []).map((e) => (
+                        <span key={e.categoria} className="block text-xs font-semibold mt-1" style={{ color: "#9a3412" }}>
+                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · à utilizar {formatBRL(e.saldo_a_utilizar)}
+                        </span>
+                      ))}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(l.saldo)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.reserva)}</td>

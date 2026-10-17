@@ -13,6 +13,7 @@ import { enviarLogo } from "../../../lib/logo";
 import { getOperador, isAdminLoggedIn } from "../../../lib/auth";
 import {
   STATUS_LABEL,
+  ESPECIAL_COR,
   TIPO_LABEL,
   formatBRL,
   formatDate,
@@ -20,10 +21,13 @@ import {
   formatMes,
   hojeISO,
   parseValor,
+  type Especial,
   type Lancamento,
   type Resumo,
   type TipoLancamento,
 } from "../../../lib/types";
+
+const NOVO = "__novo__"; // opção "Novo desconto especial..." no seletor de verba
 
 const TIPO_INFO: Record<TipoLancamento, { cor: string; ajuda: string }> = {
   credito: { cor: "#1f7a4d", ajuda: "Entrada de desconto na conta da seguradora (aumenta o saldo)." },
@@ -53,6 +57,11 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [lancs, setLancs] = useState<Lancamento[]>([]);
+  const [especiais, setEspeciais] = useState<Especial[]>([]);
+  const [categorias, setCategorias] = useState<string[]>([]); // produtos especiais já usados nesta seguradora
+  // verba do lançamento: "" = geral; NOVO = digitar um novo desconto especial
+  const [verba, setVerba] = useState("");
+  const [novaCategoria, setNovaCategoria] = useState("");
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
 
@@ -80,7 +89,11 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
 
   const carregar = useCallback(async () => {
     try {
-      const r = await apiJson<{ resumo: Resumo; lancamentos: Lancamento[] }>(`/admin/seguradoras/${id}?mes=${mes}`);
+      const r = await apiJson<{ resumo: Resumo; especiais: Especial[]; categorias: string[]; lancamentos: Lancamento[] }>(
+        `/admin/seguradoras/${id}?mes=${mes}`,
+      );
+      setEspeciais(r.especiais);
+      setCategorias(r.categorias);
       setResumo(r.resumo);
       setLancs(r.lancamentos);
       setEditNome((atual) => atual || r.resumo.nome); // não apaga o que está sendo digitado
@@ -116,9 +129,17 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       setErro("Informe um valor válido maior que zero (ex.: 1.500,00).");
       return;
     }
-    if (tipo !== "credito" && resumo && v > resumo.saldo_a_utilizar) {
+    const categoria = verba === NOVO ? novaCategoria.trim() : verba;
+    if (verba === NOVO && !categoria) {
+      setErro("Informe o produto do desconto especial (ex.: Máquinas agrícolas).");
+      return;
+    }
+    const disp = categoria
+      ? (especiais.find((e) => e.categoria === categoria)?.saldo_a_utilizar ?? 0)
+      : (resumo?.saldo_a_utilizar ?? 0);
+    if (tipo !== "credito" && resumo && v > disp) {
       const ok = window.confirm(
-        `Atenção: ${formatBRL(v)} é maior que o saldo à utilizar (${formatBRL(resumo.saldo_a_utilizar)}). ` +
+        `Atenção: ${formatBRL(v)} é maior que o saldo à utilizar${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
           "O saldo vai ficar negativo. Deseja lançar mesmo assim?",
       );
       if (!ok) return;
@@ -132,11 +153,13 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
     try {
       await apiJson(`/admin/seguradoras/${id}/lancamentos`, {
         method: "POST",
-        body: JSON.stringify({ tipo, valor: v, data, franqueado, descricao, operador }),
+        body: JSON.stringify({ tipo, valor: v, data, franqueado, descricao, operador, categoria }),
       });
       setValor("");
       setFranqueado("");
       setDescricao("");
+      setVerba("");
+      setNovaCategoria("");
       setAviso(
         `${TIPO_LABEL[tipo]} de ${formatBRL(v)} lançado por ${operador} em ${formatDateTime(new Date().toISOString())}. ` +
           "O painel dos franqueados já foi atualizado.",
@@ -301,6 +324,41 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               <Card label="− Liberado" v={resumo.liberado} />
               <Card label="= Saldo à utilizar" v={resumo.saldo_a_utilizar} destaque />
             </div>
+            {especiais.length > 0 && (
+              <div className="mb-8 -mt-4">
+                <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: ESPECIAL_COR.cor }}>
+                  ★ Descontos especiais (saldo próprio, separado da verba geral acima)
+                </p>
+                <div className="grid gap-3">
+                  {especiais.map((e) => (
+                    <div
+                      key={e.categoria}
+                      className="bg-white rounded-xl px-4 py-3 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-1 text-sm"
+                      style={{ borderLeft: `4px solid ${ESPECIAL_COR.cor}` }}
+                    >
+                      <strong className="min-w-40" style={{ color: ESPECIAL_COR.cor }}>
+                        {e.categoria}
+                      </strong>
+                      <span>
+                        Saldo <strong className="tabular-nums">{formatBRL(e.saldo)}</strong>
+                      </span>
+                      <span>
+                        − Reserva <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>
+                      </span>
+                      <span>
+                        − Liberado <strong className="tabular-nums">{formatBRL(e.liberado)}</strong>
+                      </span>
+                      <span>
+                        = À utilizar{" "}
+                        <strong className="tabular-nums" style={{ color: e.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}>
+                          {formatBRL(e.saldo_a_utilizar)}
+                        </strong>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -321,7 +379,10 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                   <button
                     key={t}
                     type="button"
-                    onClick={() => setTipo(t)}
+                    onClick={() => {
+                      setTipo(t);
+                      if (t !== "credito" && verba === NOVO) setVerba(""); // novo especial só nasce de um crédito
+                    }}
                     className="rounded-md py-2 text-sm font-semibold cursor-pointer"
                     style={
                       tipo === t ? { background: TIPO_INFO[t].cor, color: "white" } : { color: "#555", background: "transparent" }
@@ -332,6 +393,37 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 ))}
               </div>
               <p className="text-xs text-gray-500">{TIPO_INFO[tipo].ajuda}</p>
+              <div>
+                <label className="block text-sm font-medium mb-1">Verba *</label>
+                <select
+                  value={verba}
+                  onChange={(e) => setVerba(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                >
+                  <option value="">Verba geral</option>
+                  {categorias.map((c) => (
+                    <option key={c} value={c}>
+                      ★ Desconto especial: {c}
+                    </option>
+                  ))}
+                  {tipo === "credito" && <option value={NOVO}>★ Novo desconto especial...</option>}
+                </select>
+                {verba === NOVO && (
+                  <input
+                    value={novaCategoria}
+                    onChange={(e) => setNovaCategoria(e.target.value)}
+                    placeholder="Produto do desconto especial (ex.: Máquinas agrícolas)"
+                    maxLength={60}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2"
+                    required
+                  />
+                )}
+                {verba && (
+                  <p className="text-xs mt-1" style={{ color: ESPECIAL_COR.cor }}>
+                    Desconto especial tem saldo próprio, separado da verba geral.
+                  </p>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">Valor (R$)</label>
@@ -435,6 +527,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                             </span>
                           </p>
                           <p className="text-sm text-gray-600 truncate">
+                            {l.categoria && `★ ${l.categoria} · `}
                             {l.franqueado || "Sem franqueado"}
                             {l.descricao && ` · ${l.descricao}`}
                           </p>
@@ -517,6 +610,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                                 {sinal} {formatBRL(l.valor)}
                               </td>
                               <td className="py-2 pr-3 text-gray-600">
+                                <span className="block text-xs font-bold" style={{ color: ESPECIAL_COR.cor }}>★ {l.categoria}</span>
                                 {[l.franqueado, l.descricao].filter(Boolean).join(" · ") || "—"}
                                 <span className="block text-xs text-gray-400">
                                   Lançado por <strong className="font-semibold text-gray-600">{l.operador}</strong> em{" "}

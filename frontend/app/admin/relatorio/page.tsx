@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAoVivo } from "../../lib/aoVivo";
 import Header from "../../components/Header";
+import VerbaRecebida from "./VerbaRecebida";
 import SeletorMes from "../../components/SeletorMes";
 import { apiJson, downloadFile } from "../../lib/api";
 import { isAdminLoggedIn } from "../../lib/auth";
@@ -59,7 +60,7 @@ function Kpi({ label, valor, sub }: { label: string; valor: string; sub?: string
   );
 }
 
-export default function RelatorioPage() {
+function UsoFranqueados() {
   const router = useRouter();
   const [mes, setMes, meses] = useMesAdmin();
   const [segId, setSegId] = useState("");
@@ -95,11 +96,7 @@ export default function RelatorioPage() {
 
   return (
     <>
-      <Header />
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
-        <h1 className="font-heading text-2xl mb-1" style={{ color: "#072a3c" }}>
-          Relatório de uso por franqueado
-        </h1>
+      <div>
         <p className="text-sm text-gray-500 mb-5">
           Quanto cada franqueado usou da verba de {nomeSeg} em {formatMes(mes)}. &quot;Usado&quot; = utilizado + reservado
           (aprovado aguardando uso). Solicitações em análise ou não aprovadas não contam como uso.
@@ -255,6 +252,53 @@ export default function RelatorioPage() {
             </p>
           </>
         )}
+      </div>
+    </>
+  );
+}
+
+const ABAS = [
+  { v: "uso", label: "Uso por franqueado" },
+  { v: "verba", label: "Verba recebida das seguradoras" },
+] as const;
+
+export default function RelatorioPage() {
+  const [aba, setAba] = useState<(typeof ABAS)[number]["v"]>("uso");
+
+  useEffect(() => {
+    try {
+      const salva = sessionStorage.getItem("desconto_relatorio_aba");
+      if (salva === "uso" || salva === "verba") setAba(salva);
+    } catch {}
+  }, []);
+
+  function trocar(v: (typeof ABAS)[number]["v"]) {
+    setAba(v);
+    try {
+      sessionStorage.setItem("desconto_relatorio_aba", v);
+    } catch {}
+  }
+
+  return (
+    <>
+      <Header />
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+        <h1 className="font-heading text-2xl mb-4" style={{ color: "#072a3c" }}>
+          Relatórios
+        </h1>
+        <div className="flex flex-wrap gap-1 rounded-lg p-1 bg-white shadow-sm mb-5 w-fit">
+          {ABAS.map((a) => (
+            <button
+              key={a.v}
+              onClick={() => trocar(a.v)}
+              className="rounded-md px-4 py-2 text-sm font-semibold cursor-pointer"
+              style={aba === a.v ? { background: "#072a3c", color: "white" } : { color: "#555" }}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+        {aba === "uso" ? <UsoFranqueados /> : <VerbaRecebida />}
       </main>
     </>
   );

@@ -1,9 +1,19 @@
 export type TipoLancamento = "credito" | "utilizacao" | "reserva";
 export type StatusReserva = "aberta" | "utilizada" | "cancelada";
 
+export interface Especial {
+  categoria: string;
+  saldo: number;
+  reserva: number;
+  em_analise: number;
+  liberado: number;
+  saldo_a_utilizar: number;
+}
+
 export interface Resumo {
   id: string;
   nome: string;
+  especiais?: Especial[];
   logo_url: string | null;
   ativa: boolean;
   creditos: number;
@@ -36,6 +46,7 @@ export interface Lancamento {
   status_motivo?: string;
   solicitacao_id?: string;
   teste?: boolean;
+  categoria?: string;
 }
 
 export type ResumoPublico = Pick<
@@ -46,7 +57,7 @@ export type ResumoPublico = Pick<
 export interface PainelPublico {
   mes: string;
   meses: string[];
-  seguradoras: ResumoPublico[];
+  seguradoras: (ResumoPublico & { especiais: Especial[] })[];
   totais: { saldo: number; reserva: number; saldo_a_utilizar: number };
   atualizado_em: string | null;
 }
@@ -79,6 +90,7 @@ export interface Movimento {
   criado_por?: string | null;
   teste?: boolean;
   nota_gestor?: string;
+  categoria?: string;
   resposta?: string;
   respondido_por?: string;
   respondido_em?: string | null;
@@ -96,6 +108,13 @@ export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: 
 };
 
 const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+/** Rótulo da verba: "" = geral; senão nome do desconto especial. */
+export function nomeVerba(categoria?: string | null): string {
+  return categoria ? `Especial: ${categoria}` : "Verba geral";
+}
+
+export const ESPECIAL_COR = { cor: "#9a3412", fundo: "#fff1e8" }; // selo laranja do desconto especial
 
 export const FRANQUEADO_TESTE = "FRANQUEADO TESTE (treinamento)";
 
@@ -137,6 +156,7 @@ export interface Solicitacao {
   saldo_a_utilizar_atual?: number;
   teste?: boolean;
   nota_gestor?: string;
+  categoria?: string;
   origem?: "gestor";
   canal?: string;
   criado_por?: string;

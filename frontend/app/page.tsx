@@ -8,8 +8,11 @@ import { API } from "./lib/api";
 import { useAoVivo } from "./lib/aoVivo";
 import { getMinhas } from "./lib/minhas";
 import {
+  ESPECIAL_COR,
   FRANQUEADO_TESTE,
   SITUACAO,
+  nomeVerba,
+  type Especial,
   SOLIC_STATUS,
   formatBRL,
   formatDate,
@@ -80,7 +83,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             {formatBRL(m.valor)}
           </p>
           <p className="text-xs text-gray-500 whitespace-nowrap">
-            Saldo: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
+            {m.categoria ? `Saldo ${m.categoria}` : "Saldo"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
           </p>
         </div>
       </div>
@@ -90,6 +93,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             situacao={m.situacao}
             label={m.situacao === "em_analise" && m.criado_por ? "Reserva · negociação em andamento" : undefined}
           />
+          {m.categoria && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: ESPECIAL_COR.fundo, color: ESPECIAL_COR.cor }}>★ {nomeVerba(m.categoria)}</span>}
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
       </div>
@@ -190,7 +194,9 @@ export default function PainelPage() {
   }
   const [painel, setPainel] = useState<PainelPublico | null>(null);
   const [segId, setSegId] = useState("");
-  const [detalhe, setDetalhe] = useState<{ resumo: ResumoPublico; movimentos: Movimento[] } | null>(null);
+  const [detalhe, setDetalhe] = useState<{ resumo: ResumoPublico; especiais?: Especial[]; movimentos: Movimento[] } | null>(
+    null,
+  );
   const [erro, setErro] = useState("");
 
   const carregarPainel = useCallback(async () => {
@@ -247,6 +253,7 @@ export default function PainelPage() {
 
   const r = detalhe?.resumo.id === segId ? detalhe.resumo : painel?.seguradoras.find((s) => s.id === segId);
   const movimentos = detalhe?.resumo.id === segId ? detalhe.movimentos : [];
+  const esp = detalhe?.resumo.id === segId ? (detalhe.especiais ?? []) : [];
 
   return (
     <>
@@ -319,6 +326,14 @@ export default function PainelPage() {
                               <span className="block text-xs whitespace-nowrap" style={{ color: ativa ? "#d6bd8a" : "#6b7280" }}>
                                 Disponível {formatBRL(s.saldo_a_utilizar)}
                               </span>
+                              {s.especiais.length > 0 && (
+                                <span
+                                  className="inline-block text-[11px] font-bold rounded-full px-2 mt-1 whitespace-nowrap"
+                                  style={{ background: ESPECIAL_COR.fundo, color: ESPECIAL_COR.cor }}
+                                >
+                                  ★ + desconto especial
+                                </span>
+                              )}
                             </span>
                           </button>
                         </li>
@@ -349,7 +364,7 @@ export default function PainelPage() {
                     <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · verba geral"}</p>
                     <p className="text-2xl">
                       <Valor v={r.saldo} destaque />
                     </p>
@@ -387,6 +402,54 @@ export default function PainelPage() {
                     </Link>
                   </div>
                 </div>
+
+                {esp.length > 0 && (
+                  <section className="mb-6">
+                    <h3 className="font-heading text-base mb-2" style={{ color: "#072a3c" }}>
+                      ★ Descontos especiais
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Verba da seguradora para um produto específico, com saldo próprio (não se mistura com a verba geral).
+                    </p>
+                    <div className="flex flex-col gap-3">
+                      {esp.map((e) => (
+                        <div
+                          key={e.categoria}
+                          className="bg-white rounded-xl p-4 shadow-sm"
+                          style={{ borderLeft: `4px solid ${ESPECIAL_COR.cor}` }}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <p className="font-semibold" style={{ color: ESPECIAL_COR.cor }}>
+                              {e.categoria}
+                            </p>
+                            <Link
+                              href={`/solicitar?seguradora=${r.id}&verba=${encodeURIComponent(e.categoria)}`}
+                              className="text-xs font-semibold underline"
+                              style={{ color: "#072a3c" }}
+                            >
+                              Solicitar deste desconto →
+                            </Link>
+                          </div>
+                          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                            {[
+                              ["Saldo", e.saldo],
+                              ["− Reserva", e.reserva],
+                              ["− Liberado", e.liberado],
+                              ["= Saldo à utilizar", e.saldo_a_utilizar],
+                            ].map(([rot, v], i) => (
+                              <div key={rot as string}>
+                                <dt className="text-xs uppercase tracking-wider text-gray-500">{rot}</dt>
+                                <dd className={i === 3 ? "text-lg" : ""}>
+                                  <Valor v={v as number} destaque={i === 3} />
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
                 <section className="bg-white rounded-xl p-5 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-1">

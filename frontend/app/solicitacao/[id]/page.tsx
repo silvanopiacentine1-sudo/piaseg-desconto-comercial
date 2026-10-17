@@ -66,6 +66,8 @@ function Detalhe({ id }: { id: string }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-gray-500">Seguradora</dt>
           <dd className="font-medium">{s.seguradora_nome}</dd>
+          <dt className="text-gray-500">Verba</dt>
+          <dd>{s.categoria ? `★ Desconto especial: ${s.categoria}` : "Verba geral"}</dd>
           <dt className="text-gray-500">Valor</dt>
           <dd className="font-medium tabular-nums">{formatBRL(s.valor)}</dd>
           <dt className="text-gray-500">Franqueado</dt>

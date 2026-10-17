@@ -18,6 +18,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
   const [seguradoras, setSeguradoras] = useState<Resumo[]>([]);
   const [franqueados, setFranqueados] = useState<string[]>([]);
   const [segId, setSegId] = useState("");
+  const [verba, setVerba] = useState(""); // "" = geral; senão, desconto especial
   const [valor, setValor] = useState("");
   const [franqueado, setFranqueado] = useState("");
   const [canal, setCanal] = useState("WhatsApp");
@@ -48,8 +49,11 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
   }, [gestores, gestorId]);
 
   const seg = seguradoras.find((s) => s.id === segId);
+  const especiais = seg?.especiais ?? [];
+  const esp = especiais.find((e) => e.categoria === verba);
+  const disponivel = esp ? esp.saldo_a_utilizar : (seg?.saldo_a_utilizar ?? 0);
   const v = parseValor(valor);
-  const excede = seg && Number.isFinite(v) && v > seg.saldo_a_utilizar;
+  const excede = seg && Number.isFinite(v) && v > disponivel;
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +76,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
         method: "POST",
         body: JSON.stringify({
           seguradora_id: segId, valor: v, franqueado, gestor_id: gestorId,
-          observacao, canal, aprovar, resposta, operador,
+          observacao, canal, aprovar, resposta, operador, categoria: esp ? verba : "",
         }),
       });
       onCriada(
@@ -103,7 +107,15 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <label className="block text-sm font-medium mb-1">Seguradora *</label>
-          <select value={segId} onChange={(e) => setSegId(e.target.value)} className={input} required>
+          <select
+            value={segId}
+            onChange={(e) => {
+              setSegId(e.target.value);
+              setVerba("");
+            }}
+            className={input}
+            required
+          >
             <option value="">Selecione...</option>
             {seguradoras.map((s) => (
               <option key={s.id} value={s.id}>
@@ -114,7 +126,21 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
           {seg && (
             <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
               <Logo nome={seg.nome} url={seg.logo_url} size={24} />
-              Saldo à utilizar agora: <strong style={{ color: "#072a3c" }}>{formatBRL(seg.saldo_a_utilizar)}</strong>
+              Saldo à utilizar agora{esp ? ` (${esp.categoria})` : ""}:{" "}
+              <strong style={{ color: "#072a3c" }}>{formatBRL(disponivel)}</strong>
+            </div>
+          )}
+          {especiais.length > 0 && (
+            <div className="mt-3">
+              <label className="block text-sm font-medium mb-1">De qual verba? *</label>
+              <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
+                <option value="">Verba geral — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                {especiais.map((e) => (
+                  <option key={e.categoria} value={e.categoria}>
+                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>

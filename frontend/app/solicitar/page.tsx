@@ -19,6 +19,7 @@ function Formulario() {
   const [carregado, setCarregado] = useState(false);
 
   const [seguradoraId, setSeguradoraId] = useState(params.get("seguradora") ?? "");
+  const [verba, setVerba] = useState(params.get("verba") ?? ""); // "" = geral; senão, desconto especial
   const [valor, setValor] = useState("");
   const [franqueado, setFranqueado] = useState("");
   const [gestorId, setGestorId] = useState("");
@@ -47,6 +48,10 @@ function Formulario() {
   }, []);
 
   const seg = seguradoras.find((s) => s.id === seguradoraId);
+  const especiais = seg?.especiais ?? [];
+  const esp = especiais.find((e) => e.categoria === verba);
+  // disponível da verba escolhida (geral ou o desconto especial)
+  const disponivel = esp ? esp.saldo_a_utilizar : seg?.saldo_a_utilizar;
   const v = parseValor(valor);
 
   async function enviar(e: React.FormEvent) {
@@ -61,7 +66,14 @@ function Formulario() {
       const res = await fetch(`${API}/solicitacoes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seguradora_id: seguradoraId, valor: v, franqueado, gestor_id: gestorId, observacao }),
+        body: JSON.stringify({
+          seguradora_id: seguradoraId,
+          valor: v,
+          franqueado,
+          gestor_id: gestorId,
+          observacao,
+          categoria: esp ? verba : "",
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Verifique os campos");
@@ -97,7 +109,15 @@ function Formulario() {
         <form onSubmit={enviar} className="bg-white rounded-xl p-6 shadow-sm flex flex-col gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Seguradora *</label>
-            <select value={seguradoraId} onChange={(e) => setSeguradoraId(e.target.value)} className={input} required>
+            <select
+              value={seguradoraId}
+              onChange={(e) => {
+                setSeguradoraId(e.target.value);
+                setVerba("");
+              }}
+              className={input}
+              required
+            >
               <option value="">Selecione...</option>
               {seguradoras.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -108,10 +128,28 @@ function Formulario() {
             {seg && (
               <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
                 <Logo nome={seg.nome} url={seg.logo_url} size={28} />
-                Saldo à utilizar: <strong style={{ color: "#072a3c" }}>{formatBRL(seg.saldo_a_utilizar)}</strong>
+                Saldo à utilizar{esp ? ` (${esp.categoria})` : ""}:{" "}
+                <strong style={{ color: "#072a3c" }}>{formatBRL(disponivel ?? 0)}</strong>
               </div>
             )}
           </div>
+
+          {especiais.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-1">De qual verba? *</label>
+              <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
+                <option value="">Verba geral — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                {especiais.map((e) => (
+                  <option key={e.categoria} value={e.categoria}>
+                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Desconto especial é para um produto específico e tem saldo próprio.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">Valor solicitado (R$) *</label>
@@ -123,7 +161,7 @@ function Formulario() {
               className={input}
               required
             />
-            {seg && Number.isFinite(v) && v > seg.saldo_a_utilizar && (
+            {seg && Number.isFinite(v) && v > (disponivel ?? 0) && (
               <p className="text-xs text-amber-700 mt-1">
                 O valor é maior que o saldo à utilizar desta seguradora. Você pode enviar, mas a aprovação depende do gestor.
               </p>

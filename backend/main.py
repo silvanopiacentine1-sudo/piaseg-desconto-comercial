@@ -197,6 +197,7 @@ class LancamentoIn(BaseModel):
     franqueado: str = ""
     data: Optional[str] = None  # AAAA-MM-DD; padrão = hoje
     operador: str
+    categoria: str = ""  # "" = verba geral; senão, produto do desconto especial (ex.: Máquinas agrícolas)
 
 
 class AcaoOperador(BaseModel):
@@ -216,6 +217,7 @@ class SolicitacaoIn(BaseModel):
     franqueado: str
     gestor_id: str
     observacao: str = ""
+    categoria: str = ""  # verba geral ("") ou desconto especial
 
 
 CANAIS = ("WhatsApp", "Telefone", "E-mail", "Presencial", "Outro")
@@ -298,8 +300,22 @@ def _eh_teste(nome: Optional[str]) -> bool:
     return (nome or "").strip().lower() == FRANQUEADO_TESTE.lower()
 
 
+# Desconto especial: verba recebida para um produto específico (ex.:
+# Máquinas agrícolas). Cada produto tem saldo PRÓPRIO dentro da seguradora,
+# separado da verba geral. Identificado pelo campo "categoria" ("" = geral).
+def _cat(x: dict) -> str:
+    return (x.get("categoria") or "").strip()
+
+
+def _norm_cat(c: str) -> str:
+    c = " ".join((c or "").split())
+    if len(c) > 60:
+        raise HTTPException(400, "Nome do desconto especial muito longo (máx. 60 caracteres)")
+    return c
+
+
 def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] = (), mes: Optional[str] = None,
-            treino: bool = False) -> dict:
+            treino: bool = False, categoria: Optional[str] = "") -> dict:
     """Quadros do painel (tudo dentro do mês informado):
     Saldo     = verba creditada (saldo inicial);
     Reserva   = solicitações em análise + reservas manuais em aberto;
@@ -310,6 +326,8 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
     for s in solicitacoes:
         if _eh_teste(s["franqueado"]) and not treino:
             continue
+        if categoria is not None and _cat(s) != categoria:
+            continue
         if s["seguradora_id"] == seguradora["id"] and s["status"] == "pendente" and _no_mes(_sol_data(s), mes):
             em_analise += s["valor_centavos"]
             ultimo = max(ultimo or "", s["created_at"])
@@ -317,6 +335,8 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         if l["seguradora_id"] != seguradora["id"] or not _no_mes(l["data"], mes):
             continue
         if _eh_teste(l.get("franqueado")) and not treino:
+            continue
+        if categoria is not None and _cat(l) != categoria:
             continue
         ultimo = max(ultimo or "", l.get("updated_at") or l["created_at"])
         if l.get("estornado"):
@@ -349,6 +369,20 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         "saldo_a_utilizar": (creditos - reservado - liberado) / 100,
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
+
+
+def _especiais(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict], mes: Optional[str],
+               treino: bool = False) -> list[dict]:
+    """Um resumo por desconto especial da seguradora que tenha movimento no mês."""
+    cats = {_cat(l) for l in lancamentos
+            if l["seguradora_id"] == seguradora["id"] and _cat(l) and _no_mes(l["data"], mes) and not l.get("estornado")}
+    cats |= {_cat(x) for x in solicitacoes
+             if x["seguradora_id"] == seguradora["id"] and _cat(x) and _no_mes(_sol_data(x), mes)}
+    out = []
+    for c in sorted(cats, key=str.lower):
+        r = _resumo(seguradora, lancamentos, solicitacoes, mes, treino, categoria=c)
+        out.append({"categoria": c, **{k: r[k] for k in ("saldo", "reserva", "em_analise", "liberado", "saldo_a_utilizar")}})
+    return out
 
 
 def _seguradora_or_404(seguradoras: list[dict], seg_id: str) -> dict:
@@ -406,12 +440,14 @@ def painel(mes: Optional[str] = None, treino: bool = False):
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos = _load(LANCAMENTOS_FILE)
     solicitacoes = _load(SOLICITACOES_FILE)
-    linhas = [_resumo(s, lancamentos, solicitacoes, mes, treino) for s in seguradoras if s.get("ativa", True)]
+    ativas = [s for s in seguradoras if s.get("ativa", True)]
+    linhas = [_resumo(s, lancamentos, solicitacoes, mes, treino) for s in ativas]
+    esp = {s["id"]: _especiais(s, lancamentos, solicitacoes, mes, treino) for s in ativas}
     linhas.sort(key=lambda r: r["nome"].lower())
     return {
         "mes": mes or "todos",
         "meses": _meses_disponiveis(lancamentos, solicitacoes),
-        "seguradoras": [{k: r[k] for k in _CAMPOS_PUBLICOS} for r in linhas],
+        "seguradoras": [{**{k: r[k] for k in _CAMPOS_PUBLICOS}, "especiais": esp[r["id"]]} for r in linhas],
         "totais": {
             "saldo": round(sum(r["saldo"] for r in linhas), 2),
             "reserva": round(sum(r["reserva"] for r in linhas), 2),
@@ -448,7 +484,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "id": l["id"], "origem": "lancamento", "tipo": l["tipo"], "situacao": situacao,
             "data": l["data"], "ordem": l["created_at"], "valor": v / 100, "efeito_c": efeito,
             "franqueado": l.get("franqueado", ""), "descricao": l.get("descricao", ""),
-            "teste": _eh_teste(l.get("franqueado")),
+            "teste": _eh_teste(l.get("franqueado")), "categoria": _cat(l),
         })
     for s in solicitacoes:
         if s["seguradora_id"] != seg_id or not _no_mes(_sol_data(s), mes):
@@ -471,17 +507,17 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "franqueado": s["franqueado"], "observacao": s.get("observacao", ""),
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
-            "nota_gestor": s.get("nota_gestor", ""),
+            "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
         })
     itens.sort(key=lambda i: (i["data"], i["ordem"]))
-    saldo = 0
+    saldos: dict = {}  # cada verba (geral e cada especial) tem seu próprio saldo corrente
     for i in itens:
         efeito = i.pop("efeito_c")
-        saldo += efeito
+        saldos[i["categoria"]] = saldos.get(i["categoria"], 0) + efeito
         i["efeito"] = efeito / 100
-        i["saldo_apos"] = saldo / 100
+        i["saldo_apos"] = saldos[i["categoria"]] / 100
         del i["ordem"]
     return list(reversed(itens))
 
@@ -499,6 +535,7 @@ def painel_seguradora(seg_id: str, mes: Optional[str] = None, treino: bool = Fal
         "mes": mes or "todos",
         "treino": treino,
         "resumo": {k: r[k] for k in _CAMPOS_PUBLICOS},
+        "especiais": _especiais(seg, lancamentos, solicitacoes, mes, treino),
         "movimentos": _movimentos(seg_id, lancamentos, solicitacoes, _load(GESTORES_FILE), mes, treino),
     }
 
@@ -530,7 +567,8 @@ def list_seguradoras(mes: Optional[str] = None, _: None = Depends(require_admin)
     mes = _validar_mes(mes)
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
-    linhas = [_resumo(s, lancamentos, solicitacoes, mes) for s in seguradoras]
+    linhas = [{**_resumo(s, lancamentos, solicitacoes, mes), "especiais": _especiais(s, lancamentos, solicitacoes, mes)}
+              for s in seguradoras]
     linhas.sort(key=lambda r: (not r["ativa"], r["nome"].lower()))
     return linhas
 
@@ -645,7 +683,13 @@ def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(req
         _public_lancamento(l) for l in lancamentos if l["seguradora_id"] == seg_id and _no_mes(l["data"], mes)
     ]
     extrato.sort(key=lambda l: (l["data"], l["created_at"]), reverse=True)
-    return {"resumo": _resumo(seg, lancamentos, solicitacoes, mes), "lancamentos": extrato}
+    return {
+        "resumo": _resumo(seg, lancamentos, solicitacoes, mes),
+        "especiais": _especiais(seg, lancamentos, solicitacoes, mes),
+        # todos os produtos especiais já usados nesta seguradora (para sugerir no formulário)
+        "categorias": sorted({_cat(l) for l in lancamentos if l["seguradora_id"] == seg_id and _cat(l)}, key=str.lower),
+        "lancamentos": extrato,
+    }
 
 
 @app.post("/admin/seguradoras/{seg_id}/lancamentos", status_code=201)
@@ -677,6 +721,7 @@ def create_lancamento(seg_id: str, body: LancamentoIn, _: None = Depends(require
             "operador": operador,
             "created_at": now_iso(),
             "estornado": False,
+            "categoria": _norm_cat(body.categoria),
         }
         if body.tipo == "reserva":
             lanc["status"] = "aberta"
@@ -866,6 +911,7 @@ def create_solicitacao(body: SolicitacaoIn):
             "status": "pendente",
             "data": _hoje_sp(),
             "created_at": now_iso(),
+            "categoria": _norm_cat(body.categoria),
         }
         solicitacoes.append(s)
         _save(SOLICITACOES_FILE, solicitacoes)
@@ -892,9 +938,10 @@ def list_solicitacoes(_: None = Depends(require_admin)):
         v["data"] = _sol_data(s)
         if s["status"] == "pendente" and s["seguradora_id"] in segs:
             # saldo do mês da solicitação, sem contar ela mesma (que já está "em análise")
-            chave = (s["seguradora_id"], v["data"][:7])
+            chave = (s["seguradora_id"], v["data"][:7], _cat(s))
             if chave not in cache:
-                cache[chave] = _resumo(segs[s["seguradora_id"]], lancamentos, solicitacoes, chave[1])["saldo_a_utilizar"]
+                cache[chave] = _resumo(segs[s["seguradora_id"]], lancamentos, solicitacoes, chave[1],
+                                       categoria=chave[2])["saldo_a_utilizar"]
             proprio = 0 if _eh_teste(s["franqueado"]) else s["valor_centavos"] / 100  # teste não está no saldo real
             v["saldo_a_utilizar_atual"] = round(cache[chave] + proprio, 2)
         out.append(v)
@@ -924,6 +971,7 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
             "created_at": agora,
             "estornado": False,
             "solicitacao_id": s["id"],
+            "categoria": _cat(s),
         }
         lancamentos.append(lanc)
         _save(LANCAMENTOS_FILE, lancamentos)
@@ -967,6 +1015,7 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
             "origem": "gestor",
             "canal": canal,
             "criado_por": operador,
+            "categoria": _norm_cat(body.categoria),
         }
         if body.aprovar:
             _decidir(s, True, body.resposta.strip(), operador)
@@ -1135,6 +1184,114 @@ def relatorio_export(mes: Optional[str] = None, seguradora_id: Optional[str] = N
     )
 
 
+# ---------------------------------------------------------------------------
+# Relatório: verba recebida das seguradoras (créditos), mês a mês no ano
+# ---------------------------------------------------------------------------
+
+MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+
+def _relatorio_verba(ano: int) -> dict:
+    seguradoras = _load(SEGURADORAS_FILE)
+    lancamentos = _load(LANCAMENTOS_FILE)
+    creditos = [l for l in lancamentos
+                if l["tipo"] == "credito" and not l.get("estornado") and not _eh_teste(l.get("franqueado"))]
+    anos = sorted({int(l["data"][:4]) for l in creditos} | {int(_hoje_sp()[:4])}, reverse=True)
+    vazio = lambda: [0] * 12  # noqa: E731
+    por_seg: dict[str, dict] = {}
+    tot_geral, tot_esp = vazio(), vazio()
+    especiais_ano: dict[str, int] = {}
+    for l in creditos:
+        if int(l["data"][:4]) != ano:
+            continue
+        m = int(l["data"][5:7]) - 1
+        v = l["valor_centavos"]
+        r = por_seg.setdefault(l["seguradora_id"], {"geral": vazio(), "especial": vazio(), "especiais": {}})
+        if _cat(l):
+            r["especial"][m] += v
+            tot_esp[m] += v
+            r["especiais"][_cat(l)] = r["especiais"].get(_cat(l), 0) + v
+            especiais_ano[_cat(l)] = especiais_ano.get(_cat(l), 0) + v
+        else:
+            r["geral"][m] += v
+            tot_geral[m] += v
+    reais = lambda arr: [x / 100 for x in arr]  # noqa: E731
+    linhas = []
+    for seg in seguradoras:
+        r = por_seg.get(seg["id"])
+        if not r:
+            continue
+        total = [g + e for g, e in zip(r["geral"], r["especial"])]
+        linhas.append({
+            "id": seg["id"], "nome": seg["nome"], "logo_url": _logo_url(seg),
+            "geral": reais(r["geral"]), "especial": reais(r["especial"]), "total": reais(total),
+            "total_ano": sum(total) / 100, "geral_ano": sum(r["geral"]) / 100, "especial_ano": sum(r["especial"]) / 100,
+            "especiais": [{"categoria": k, "valor": v / 100} for k, v in sorted(r["especiais"].items(), key=lambda x: -x[1])],
+        })
+    linhas.sort(key=lambda x: (-x["total_ano"], x["nome"].lower()))
+    total_mes = [g + e for g, e in zip(tot_geral, tot_esp)]
+    meses_com_verba = [x for x in total_mes if x]
+    return {
+        "ano": ano,
+        "anos": anos,
+        "meses": MESES_ABREV,
+        "seguradoras": linhas,
+        "totais_mes": {"geral": reais(tot_geral), "especial": reais(tot_esp), "total": reais(total_mes)},
+        "total_ano": sum(total_mes) / 100,
+        "geral_ano": sum(tot_geral) / 100,
+        "especial_ano": sum(tot_esp) / 100,
+        "media_mensal": round(sum(meses_com_verba) / len(meses_com_verba) / 100, 2) if meses_com_verba else 0,
+        "especiais_ano": [{"categoria": k, "valor": v / 100} for k, v in sorted(especiais_ano.items(), key=lambda x: -x[1])],
+    }
+
+
+@app.get("/admin/relatorio/verba")
+def relatorio_verba(ano: Optional[int] = None, _: None = Depends(require_admin)):
+    return _relatorio_verba(ano or int(_hoje_sp()[:4]))
+
+
+@app.get("/admin/relatorio/verba/export")
+def relatorio_verba_export(ano: Optional[int] = None, _: None = Depends(require_admin)):
+    rel = _relatorio_verba(ano or int(_hoje_sp()[:4]))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Verba recebida {rel['ano']}"
+    cab = ["Seguradora", "Verba"] + rel["meses"] + [f"Total {rel['ano']}"]
+    ws.append(cab)
+    for r in rel["seguradoras"]:
+        ws.append([r["nome"], "Geral"] + r["geral"] + [r["geral_ano"]])
+        if r["especial_ano"]:
+            nomes_esp = ", ".join(e["categoria"] for e in r["especiais"])
+            ws.append([r["nome"], f"Especial ({nomes_esp})"] + r["especial"] + [r["especial_ano"]])
+        ws.append([r["nome"], "Total"] + r["total"] + [r["total_ano"]])
+    t = rel["totais_mes"]
+    ws.append(["TOTAL", "Geral"] + t["geral"] + [rel["geral_ano"]])
+    ws.append(["TOTAL", "Especial"] + t["especial"] + [rel["especial_ano"]])
+    ws.append(["TOTAL", "Total"] + t["total"] + [rel["total_ano"]])
+    brl = '"R$" #,##0.00;[Red]-"R$" #,##0.00'
+    for row in ws.iter_rows(min_row=2, min_col=3):
+        for c in row:
+            c.number_format = brl
+        if row[0].row and ws.cell(row[0].row, 2).value == "Total":
+            for c in ws[row[0].row]:
+                c.font = Font(bold=True)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="072A3C")
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 34
+    for col in range(3, 3 + 13):
+        ws.column_dimensions[ws.cell(1, col).column_letter].width = 14
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="verba-recebida-{rel["ano"]}.xlsx"'},
+    )
+
+
 TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
 STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada"}
 
@@ -1167,7 +1324,7 @@ def export_excel(_: None = Depends(require_admin)):
             c.number_format = brl
 
     ws2 = wb.create_sheet("Extrato")
-    ws2.append(["Data", "Seguradora", "Tipo", "Valor", "Situação", "Franqueado", "Descrição", "Lançado por",
+    ws2.append(["Data", "Seguradora", "Verba", "Tipo", "Valor", "Situação", "Franqueado", "Descrição", "Lançado por",
                 "Lançado em", "Observações"])
     for l in sorted(lancamentos, key=lambda l: (l["data"], l["created_at"])):
         if l.get("estornado"):
@@ -1181,12 +1338,13 @@ def export_excel(_: None = Depends(require_admin)):
         else:
             situacao, obs = "", ""
         ws2.append([
-            _br_date(l["data"]), nomes.get(l["seguradora_id"], "?"), TIPO_LABEL[l["tipo"]],
+            _br_date(l["data"]), nomes.get(l["seguradora_id"], "?"),
+            f"Especial: {_cat(l)}" if _cat(l) else "Geral", TIPO_LABEL[l["tipo"]],
             l["valor_centavos"] / 100, situacao, l.get("franqueado", ""), l.get("descricao", ""),
             l.get("operador", ""),
             datetime.fromisoformat(l["created_at"]).astimezone(SP_TZ).strftime("%d/%m/%Y %H:%M"), obs,
         ])
-    for row in ws2.iter_rows(min_row=2, min_col=4, max_col=4):
+    for row in ws2.iter_rows(min_row=2, min_col=5, max_col=5):
         for c in row:
             c.number_format = brl
 

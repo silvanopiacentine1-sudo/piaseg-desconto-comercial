@@ -64,6 +64,14 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
         <div>
           <p className="font-semibold" style={{ color: "#072a3c" }}>
             #{s.numero} · {s.seguradora_nome} · <span className="tabular-nums">{formatBRL(s.valor)}</span>
+            {s.categoria && (
+              <span
+                className="ml-2 text-xs font-bold rounded-full px-2 py-0.5 align-middle"
+                style={{ background: "#fff1e8", color: "#9a3412" }}
+              >
+                ★ Especial: {s.categoria}
+              </span>
+            )}
           </p>
           <p className="text-sm text-gray-600">
             {s.franqueado} → <strong>{s.gestor_nome}</strong>
@@ -100,7 +108,8 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       {s.status === "pendente" ? (
         <>
           <p className="text-xs mb-2" style={{ color: excede ? "#b42318" : "#555" }}>
-            Saldo à utilizar hoje em {s.seguradora_nome}: <strong>{formatBRL(s.saldo_a_utilizar_atual ?? 0)}</strong>
+            Saldo à utilizar hoje em {s.seguradora_nome}
+            {s.categoria ? ` (desconto especial ${s.categoria})` : ""}: <strong>{formatBRL(s.saldo_a_utilizar_atual ?? 0)}</strong>
             {excede && " — valor solicitado excede o disponível"}
           </p>
           <textarea
