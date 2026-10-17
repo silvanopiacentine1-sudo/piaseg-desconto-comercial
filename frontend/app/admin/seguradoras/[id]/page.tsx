@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAoVivo } from "../../../lib/aoVivo";
 import Header from "../../../components/Header";
 import Logo from "../../../components/Logo";
+import Prazo from "../../../components/Prazo";
 import SeletorMes from "../../../components/SeletorMes";
 import { useMesAdmin } from "../../../lib/mesAdmin";
 import { apiJson } from "../../../lib/api";
@@ -640,6 +641,11 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                             >
                               {l.solicitacao_id ? "✓ Liberado (aprovado pelo gestor)" : "Reserva manual"}
                             </span>
+                            {!l.solicitacao_id && l.expira_em && (
+                              <span className="ml-2 align-middle">
+                                <Prazo expiraEm={l.expira_em} compacto />
+                              </span>
+                            )}
                           </p>
                           <p className="text-sm text-gray-600 truncate">
                             {l.categoria && `★ ${l.categoria} · `}

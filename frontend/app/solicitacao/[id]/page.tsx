@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { API } from "../../lib/api";
 import { useAoVivo } from "../../lib/aoVivo";
 import { addMinha } from "../../lib/minhas";
+import Historico from "../../components/Historico";
+import Prazo from "../../components/Prazo";
 import { SOLIC_STATUS, formatBRL, formatDateTime, type Solicitacao } from "../../lib/types";
 
 const RESERVA_TEXTO: Record<string, string> = {
@@ -102,7 +104,30 @@ function Detalhe({ id }: { id: string }) {
           <p className="text-sm text-gray-600 mt-3">{RESERVA_TEXTO[s.reserva_status]}</p>
         )}
         {s.status === "pendente" && (
-          <p className="text-sm text-gray-500 mt-4">Aguardando a análise do gestor. Volte a esta página para ver a resposta.</p>
+          <div className="mt-4 flex flex-col gap-2">
+            {s.expira_em && (
+              <div>
+                <Prazo expiraEm={s.expira_em} />
+              </div>
+            )}
+            <p className="text-sm text-gray-500">
+              Aguardando a análise do gestor. A reserva vale por <strong>48 horas</strong>: se não for aprovada nesse prazo,
+              ela expira e o valor volta para o saldo da rede.
+            </p>
+          </div>
+        )}
+        {s.status === "expirada" && (
+          <p className="text-sm rounded-lg px-3 py-2 mt-4" style={{ background: "#f1f1f1", color: "#4b5563" }}>
+            ⌛ Esta reserva <strong>expirou</strong>
+            {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`}: o prazo de 48h terminou sem aprovação e o valor voltou
+            para o saldo à utilizar. Se ainda precisar do desconto, faça uma nova solicitação.
+          </p>
+        )}
+        {s.historico && s.historico.length > 0 && (
+          <div className="mt-6">
+            <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Histórico</p>
+            <Historico eventos={s.historico} />
+          </div>
         )}
       </div>
     </>

@@ -110,6 +110,72 @@ def _marcar_alteracao() -> None:
     _versao["v"] = time.time_ns()
 
 
+# ---------------------------------------------------------------------------
+# Prazo das reservas: tudo que está no quadro "Reserva" (solicitação aguardando
+# o gestor e reserva lançada à mão) vale por 48h. Vencido o prazo, vira
+# "expirada" sozinho e o valor volta para o saldo à utilizar. Cada solicitação
+# guarda um histórico (eventos com data/hora) como evidência.
+# ---------------------------------------------------------------------------
+PRAZO_RESERVA_H = 48
+SISTEMA = "Sistema (prazo de 48h)"
+
+
+def _expira_em(criado_iso: str) -> str:
+    return (datetime.fromisoformat(criado_iso) + timedelta(hours=PRAZO_RESERVA_H)).isoformat()
+
+
+def _evento(obj: dict, tipo: str, por: str, detalhe: str = "", em: Optional[str] = None) -> None:
+    obj.setdefault("eventos", []).append({"em": em or now_iso(), "tipo": tipo, "por": por, "detalhe": detalhe})
+
+
+def _expirar_vencidas() -> int:
+    """Expira reservas com prazo vencido. Seguro chamar a qualquer momento."""
+    agora = datetime.now(timezone.utc)
+    msg = f"Prazo de {PRAZO_RESERVA_H}h encerrado sem aprovação — o valor voltou para o saldo à utilizar."
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        lancamentos = _load(LANCAMENTOS_FILE)
+        mud_s = mud_l = 0
+        for x in solicitacoes:
+            if x["status"] != "pendente":
+                continue
+            exp = x.get("expira_em") or _expira_em(x["created_at"])
+            if datetime.fromisoformat(exp) <= agora:
+                x["status"] = "expirada"
+                x["expirada_em"] = agora.isoformat()
+                x["expira_em"] = exp
+                _evento(x, "expirada", SISTEMA, msg, em=x["expirada_em"])
+                mud_s += 1
+        for l in lancamentos:
+            if l["tipo"] != "reserva" or l.get("status") != "aberta" or l.get("solicitacao_id") or l.get("estornado"):
+                continue
+            exp = l.get("expira_em") or _expira_em(l["created_at"])
+            if datetime.fromisoformat(exp) <= agora:
+                l["status"] = "expirada"
+                l["status_em"] = agora.isoformat()
+                l["status_por"] = SISTEMA
+                l["status_motivo"] = msg
+                l["updated_at"] = l["status_em"]
+                l["expira_em"] = exp
+                mud_l += 1
+        if mud_s:
+            _save(SOLICITACOES_FILE, solicitacoes)
+        if mud_l:
+            _save(LANCAMENTOS_FILE, lancamentos)
+    return mud_s + mud_l
+
+
+def _vigia_prazos() -> None:
+    while True:
+        try:
+            n = _expirar_vencidas()
+            if n:
+                print(f"[prazo] {n} reserva(s) expirada(s)", flush=True)
+        except Exception as e:  # nunca derruba o app
+            print(f"[prazo] erro: {e}", flush=True)
+        time.sleep(30)
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -149,6 +215,11 @@ def _run_startup_backup() -> None:
 
 
 _run_startup_backup()
+
+
+@app.on_event("startup")
+def _iniciar_vigia_prazos() -> None:
+    threading.Thread(target=_vigia_prazos, daemon=True, name="vigia-prazos").start()
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +506,7 @@ _CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", 
 def painel(mes: Optional[str] = None, treino: bool = False):
     """Painel aberto aos franqueados: números por seguradora ativa no mês
     (padrão = mês atual; mes=todos = período inteiro)."""
+    _expirar_vencidas()
     mes_param = mes
     mes = _validar_mes(mes) if mes_param else _hoje_sp()[:7]
     seguradoras = _load(SEGURADORAS_FILE)
@@ -478,13 +550,16 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
         elif l["tipo"] == "utilizacao":
             situacao, efeito = "utilizada", -v
         else:
-            situacao = {"aberta": "reservada", "utilizada": "utilizada", "cancelada": "cancelada"}[l["status"]]
-            efeito = 0 if situacao == "cancelada" else -v
+            situacao = {"aberta": "reservada", "utilizada": "utilizada", "cancelada": "cancelada", "expirada": "expirada"}[
+                l["status"]]
+            efeito = 0 if situacao in ("cancelada", "expirada") else -v
         itens.append({
             "id": l["id"], "origem": "lancamento", "tipo": l["tipo"], "situacao": situacao,
             "data": l["data"], "ordem": l["created_at"], "valor": v / 100, "efeito_c": efeito,
             "franqueado": l.get("franqueado", ""), "descricao": l.get("descricao", ""),
             "teste": _eh_teste(l.get("franqueado")), "categoria": _cat(l),
+            "expira_em": (l.get("expira_em") or _expira_em(l["created_at"])) if situacao == "reservada" else None,
+            "expirada_em": l.get("status_em") if situacao == "expirada" else None,
         })
     for s in solicitacoes:
         if s["seguradora_id"] != seg_id or not _no_mes(_sol_data(s), mes):
@@ -496,6 +571,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             situacao, efeito = "em_analise", -v
         elif s["status"] == "reprovada":
             situacao, efeito = "reprovada", 0
+        elif s["status"] == "expirada":
+            situacao, efeito = "expirada", 0
         else:
             lanc = lanc_por_id.get(s.get("lancamento_id") or "")
             st = "estornada" if (lanc and lanc.get("estornado")) else (lanc or {}).get("status", "aberta")
@@ -508,6 +585,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
+            "expira_em": (s.get("expira_em") or _expira_em(s["created_at"])) if s["status"] == "pendente" else None,
+            "expirada_em": s.get("expirada_em"),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
         })
@@ -524,6 +603,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
 
 @app.get("/painel/{seg_id}")
 def painel_seguradora(seg_id: str, mes: Optional[str] = None, treino: bool = False):
+    _expirar_vencidas()
     mes = _validar_mes(mes) if mes else _hoje_sp()[:7]
     seguradoras = _load(SEGURADORAS_FILE)
     seg = next((s for s in seguradoras if s["id"] == seg_id and s.get("ativa", True)), None)
@@ -564,6 +644,7 @@ def trocar_senha(body: SenhaUpdate, _: None = Depends(require_admin)):
 
 @app.get("/admin/seguradoras")
 def list_seguradoras(mes: Optional[str] = None, _: None = Depends(require_admin)):
+    _expirar_vencidas()
     mes = _validar_mes(mes)
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
@@ -675,6 +756,7 @@ def get_logo(arquivo: str):
 
 @app.get("/admin/seguradoras/{seg_id}")
 def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(require_admin)):
+    _expirar_vencidas()
     mes = _validar_mes(mes)
     seguradoras = _load(SEGURADORAS_FILE)
     seg = _seguradora_or_404(seguradoras, seg_id)
@@ -727,6 +809,7 @@ def create_lancamento(seg_id: str, body: LancamentoIn, _: None = Depends(require
         }
         if body.tipo == "reserva":
             lanc["status"] = "aberta"
+            lanc["expira_em"] = _expira_em(lanc["created_at"])
         lancamentos.append(lanc)
         _save(LANCAMENTOS_FILE, lancamentos)
     return _public_lancamento(lanc)
@@ -869,7 +952,19 @@ def franqueados_lista():
 # Solicitações de reserva (franqueado pede → gestor aprova ou não)
 # ---------------------------------------------------------------------------
 
-SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada"}
+SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada",
+                      "expirada": "Expirada (prazo de 48h)"}
+
+
+def _historico_antigo(s: dict) -> list[dict]:
+    """Solicitações criadas antes do histórico existir: monta a linha do tempo
+    a partir dos campos gravados (data de criação e da resposta)."""
+    h = [{"em": s["created_at"], "tipo": "criada", "por": s.get("criado_por") or s["franqueado"],
+          "detalhe": "Reserva feita pelo gestor" if s.get("origem") == "gestor" else "Solicitação enviada pelo franqueado"}]
+    if s.get("respondido_em"):
+        h.append({"em": s["respondido_em"], "tipo": s["status"], "por": s.get("respondido_por", ""),
+                  "detalhe": s.get("resposta", "")})
+    return h
 
 
 def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], lancamentos: list[dict]) -> dict:
@@ -878,6 +973,9 @@ def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], la
     out = {k: v for k, v in s.items() if k != "valor_centavos"}
     out["valor"] = s["valor_centavos"] / 100
     out["teste"] = _eh_teste(s["franqueado"])
+    if s["status"] == "pendente":
+        out["expira_em"] = s.get("expira_em") or _expira_em(s["created_at"])
+    out["historico"] = s.get("eventos") or _historico_antigo(s)
     out["seguradora_nome"] = seg["nome"] if seg else "?"
     out["gestor_nome"] = gest["nome"] if gest else "?"
     if s.get("lancamento_id"):
@@ -915,6 +1013,8 @@ def create_solicitacao(body: SolicitacaoIn):
             "created_at": now_iso(),
             "categoria": _norm_cat(body.categoria),
         }
+        s["expira_em"] = _expira_em(s["created_at"])
+        _evento(s, "criada", franqueado, "Solicitação enviada pelo franqueado no painel", em=s["created_at"])
         solicitacoes.append(s)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, seguradoras, gestores, [])
@@ -922,6 +1022,7 @@ def create_solicitacao(body: SolicitacaoIn):
 
 @app.get("/solicitacoes/{sol_id}")
 def get_solicitacao(sol_id: str):
+    _expirar_vencidas()
     s = next((x for x in _load(SOLICITACOES_FILE) if x["id"] == sol_id), None)
     if not s:
         raise HTTPException(404, "Solicitação não encontrada")
@@ -930,6 +1031,7 @@ def get_solicitacao(sol_id: str):
 
 @app.get("/admin/solicitacoes")
 def list_solicitacoes(_: None = Depends(require_admin)):
+    _expirar_vencidas()
     seguradoras, gestores, lancamentos = _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE)
     solicitacoes = _load(SOLICITACOES_FILE)
     segs = {s["id"]: s for s in seguradoras}
@@ -979,6 +1081,7 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
         _save(LANCAMENTOS_FILE, lancamentos)
         s["lancamento_id"] = lanc["id"]
     s["status"] = "aprovada" if aprovar else "reprovada"
+    _evento(s, "aprovada" if aprovar else "reprovada", operador, resposta, em=agora)
     s["resposta"] = resposta
     s["respondido_por"] = operador
     s["respondido_em"] = agora
@@ -1019,6 +1122,8 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
             "criado_por": operador,
             "categoria": _norm_cat(body.categoria),
         }
+        s["expira_em"] = _expira_em(s["created_at"])
+        _evento(s, "criada", operador, f"Reserva feita pelo gestor para {franqueado} (pedido via {canal})", em=s["created_at"])
         if body.aprovar:
             _decidir(s, True, body.resposta.strip(), operador)
         elif body.resposta.strip():
@@ -1059,6 +1164,8 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
         s = next((x for x in solicitacoes if x["id"] == sol_id), None)
         if not s:
             raise HTTPException(404, "Solicitação não encontrada")
+        if s["status"] == "expirada":
+            raise HTTPException(400, f"Essa solicitação expirou (prazo de {PRAZO_RESERVA_H}h) e o valor já voltou para o saldo")
         if s["status"] != "pendente":
             raise HTTPException(400, "Essa solicitação já foi respondida")
         _decidir(s, body.decisao == "aprovar", resposta, operador)
@@ -1088,7 +1195,8 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         if chave not in por_franq:
             por_franq[chave] = {
                 "franqueado": nome, "utilizado": 0, "reservado": 0, "negocios": 0,
-                "solic_aprovadas": 0, "solic_reprovadas": 0, "solic_pendentes": 0, "por_seguradora": {},
+                "solic_aprovadas": 0, "solic_reprovadas": 0, "solic_pendentes": 0, "solic_expiradas": 0,
+                "por_seguradora": {},
             }
         return por_franq[chave]
 
@@ -1114,7 +1222,8 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         if _eh_teste(s["franqueado"]) or not entra(s["seguradora_id"], _sol_data(s)):
             continue
         r = linha(s["franqueado"])
-        campo = {"aprovada": "solic_aprovadas", "reprovada": "solic_reprovadas", "pendente": "solic_pendentes"}[s["status"]]
+        campo = {"aprovada": "solic_aprovadas", "reprovada": "solic_reprovadas", "pendente": "solic_pendentes",
+                 "expirada": "solic_expiradas"}[s["status"]]
         r[campo] += 1
 
     linhas = []
@@ -1295,7 +1404,7 @@ def relatorio_verba_export(ano: Optional[int] = None, _: None = Depends(require_
 
 
 TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
-STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada"}
+STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada", "expirada": "Expirada (prazo de 48h)"}
 
 
 def _br_date(iso: str) -> str:

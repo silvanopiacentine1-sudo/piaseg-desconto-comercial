@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useAoVivo } from "../../lib/aoVivo";
 import Header from "../../components/Header";
 import NovaReserva from "./NovaReserva";
+import Historico from "../../components/Historico";
+import Prazo from "../../components/Prazo";
 import { apiJson } from "../../lib/api";
 import { getOperador, isAdminLoggedIn } from "../../lib/auth";
 import { SOLIC_STATUS, formatBRL, formatDateTime, type Gestor, type Solicitacao, type StatusSolicitacao } from "../../lib/types";
@@ -15,6 +17,7 @@ const FILTROS: { v: StatusSolicitacao | "todas"; label: string }[] = [
   { v: "pendente", label: "Pendentes" },
   { v: "aprovada", label: "Aprovadas" },
   { v: "reprovada", label: "Não aprovadas" },
+  { v: "expirada", label: "Expiradas" },
   { v: "todas", label: "Todas" },
 ];
 
@@ -22,6 +25,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
   const [resposta, setResposta] = useState("");
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [verHistorico, setVerHistorico] = useState(false);
   const st = SOLIC_STATUS[s.status];
   const reservaGestor = s.origem === "gestor" && s.status === "pendente";
   const excede = s.saldo_a_utilizar_atual !== undefined && s.valor > s.saldo_a_utilizar_atual;
@@ -91,6 +95,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
             {reservaGestor ? "◷ Reserva · negociação em andamento" : st.label}
           </span>
+          {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} />}
         </div>
       </div>
 
@@ -105,7 +110,31 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
         )}
       </div>
 
-      {s.status === "pendente" ? (
+      {s.status === "expirada" && (
+        <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#f1f1f1", color: "#4b5563" }}>
+          ⌛ Expirou{s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} — o prazo de 48h terminou sem aprovação e o
+          valor voltou para o saldo à utilizar. Fica registrado aqui como evidência.
+        </p>
+      )}
+
+      {s.historico && s.historico.length > 0 && (
+        <div className="mb-3">
+          <button
+            onClick={() => setVerHistorico(!verHistorico)}
+            className="text-xs font-semibold underline cursor-pointer"
+            style={{ color: "#072a3c" }}
+          >
+            {verHistorico ? "▾ Ocultar histórico" : `▸ Ver histórico (${s.historico.length} registro${s.historico.length > 1 ? "s" : ""})`}
+          </button>
+          {verHistorico && (
+            <div className="mt-2 rounded-lg p-3" style={{ background: "#fafaf8", border: "1px solid #e8e6df" }}>
+              <Historico eventos={s.historico} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {s.status === "expirada" ? null : s.status === "pendente" ? (
         <>
           <p className="text-xs mb-2" style={{ color: excede ? "#b42318" : "#555" }}>
             Saldo à utilizar hoje em {s.seguradora_nome}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Logo from "./components/Logo";
+import Prazo from "./components/Prazo";
 import SeletorMes from "./components/SeletorMes";
 import { API } from "./lib/api";
 import { useAoVivo } from "./lib/aoVivo";
@@ -94,9 +95,16 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             label={m.situacao === "em_analise" && m.criado_por ? "Reserva · negociação em andamento" : undefined}
           />
           {m.categoria && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: ESPECIAL_COR.fundo, color: ESPECIAL_COR.cor }}>★ {nomeVerba(m.categoria)}</span>}
+          {m.expira_em && <Prazo expiraEm={m.expira_em} />}
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
       </div>
+      {m.situacao === "expirada" && (
+        <p className="text-xs rounded-lg px-3 py-2" style={{ background: "#f1f1f1", color: "#4b5563" }}>
+          ⌛ Reserva expirada{m.expirada_em && ` em ${formatDateTime(m.expirada_em)}`}: o prazo de 48h terminou sem
+          aprovação e o valor voltou para o saldo à utilizar.
+        </p>
+      )}
       {m.observacao && (
         <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: "#f6f6f6" }}>
           <span className="block text-xs uppercase tracking-wider text-gray-500">Justificativa do franqueado</span>
@@ -165,6 +173,7 @@ function MinhasSolicitacoes() {
             >
               {SOLIC_STATUS[s.status].label}
             </span>
+            {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} compacto />}
           </Link>
         ))}
       </div>
@@ -457,7 +466,7 @@ export default function PainelPage() {
                       Movimentações
                     </h2>
                     <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                      {(["aprovada", "reprovada", "em_analise"] as const).map((k) => (
+                      {(["aprovada", "reprovada", "em_analise", "expirada"] as const).map((k) => (
                         <span key={k} className="flex items-center gap-1">
                           <span className="w-2.5 h-2.5 rounded-full" style={{ background: SITUACAO[k].cor }} />
                           {SITUACAO[k].label}
@@ -483,7 +492,8 @@ export default function PainelPage() {
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
               A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
-              <strong>Reserva</strong>: solicitações aguardando o gestor (se não aprovadas, o valor volta).{" "}
+              <strong>Reserva</strong>: solicitações aguardando o gestor, válidas por <strong>48 horas</strong> (se não forem
+              aprovadas nesse prazo, expiram e o valor volta para o saldo).{" "}
               <strong>Liberado</strong>: aprovado pelo gestor (passa da Reserva para cá). <strong>Saldo à utilizar</strong> =
               Saldo − Reserva − Liberado: o que ainda está livre.
             </p>
