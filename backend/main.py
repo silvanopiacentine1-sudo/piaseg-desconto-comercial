@@ -265,10 +265,12 @@ def _meses_disponiveis(lancamentos: list[dict], solicitacoes: list[dict]) -> lis
 
 
 def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] = (), mes: Optional[str] = None) -> dict:
-    """Saldo = créditos − utilizado; Reserva = reservas em aberto + solicitações
-    em análise (já seguram o valor, como numa conta corrente); Saldo à
-    utilizar = Saldo − Reserva. Tudo dentro do mês informado."""
-    creditos = utilizado = reservado = em_analise = 0
+    """Quadros do painel (tudo dentro do mês informado):
+    Saldo     = verba creditada (saldo inicial);
+    Reserva   = solicitações em análise + reservas manuais em aberto;
+    Liberado  = aprovado pelo gestor (reserva de solicitação em aberto) + já utilizado;
+    Saldo à utilizar = Saldo − Reserva − Liberado."""
+    creditos = utilizado = reservado = liberado_aberto = em_analise = 0
     ultimo = None
     for s in solicitacoes:
         if s["seguradora_id"] == seguradora["id"] and s["status"] == "pendente" and _no_mes(_sol_data(s), mes):
@@ -286,11 +288,14 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
             utilizado += l["valor_centavos"]
         elif l["tipo"] == "reserva":
             if l.get("status") == "aberta":
-                reservado += l["valor_centavos"]
+                if l.get("solicitacao_id"):
+                    liberado_aberto += l["valor_centavos"]  # aprovada pelo gestor
+                else:
+                    reservado += l["valor_centavos"]
             elif l.get("status") == "utilizada":
                 utilizado += l["valor_centavos"]
-    saldo = creditos - utilizado
     reservado += em_analise
+    liberado = liberado_aberto + utilizado
     return {
         "id": seguradora["id"],
         "nome": seguradora["nome"],
@@ -298,10 +303,11 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         "ativa": seguradora.get("ativa", True),
         "creditos": creditos / 100,
         "utilizado": utilizado / 100,
-        "saldo": saldo / 100,
+        "saldo": creditos / 100,
         "reserva": reservado / 100,
         "em_analise": em_analise / 100,
-        "saldo_a_utilizar": (saldo - reservado) / 100,
+        "liberado": liberado / 100,
+        "saldo_a_utilizar": (creditos - reservado - liberado) / 100,
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
 
@@ -343,7 +349,7 @@ def health():
     return {"ok": True}
 
 
-_CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "saldo_a_utilizar", "atualizado_em")
+_CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "liberado", "saldo_a_utilizar", "atualizado_em")
 
 
 @app.get("/painel")
@@ -364,6 +370,7 @@ def painel(mes: Optional[str] = None):
         "totais": {
             "saldo": round(sum(r["saldo"] for r in linhas), 2),
             "reserva": round(sum(r["reserva"] for r in linhas), 2),
+            "liberado": round(sum(r["liberado"] for r in linhas), 2),
             "saldo_a_utilizar": round(sum(r["saldo_a_utilizar"] for r in linhas), 2),
         },
         "atualizado_em": max((r["atualizado_em"] or "" for r in linhas), default=None) or None,
@@ -1017,10 +1024,10 @@ def export_excel(_: None = Depends(require_admin)):
 
     ws = wb.active
     ws.title = "Saldos"
-    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Saldo à utilizar"])
+    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Liberado", "Saldo à utilizar"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
-        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["saldo_a_utilizar"]])
-    for row in ws.iter_rows(min_row=2, min_col=3, max_col=5):
+        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["liberado"], r["saldo_a_utilizar"]])
+    for row in ws.iter_rows(min_row=2, min_col=3, max_col=6):
         for c in row:
             c.number_format = brl
 

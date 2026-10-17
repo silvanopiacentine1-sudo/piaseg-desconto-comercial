@@ -274,14 +274,15 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <p className="text-sm text-gray-500">
                 Valores de <strong>{formatMes(mes)}</strong>
-                {resumo.em_analise > 0 && ` · a reserva inclui ${formatBRL(resumo.em_analise)} de solicitações em análise`}
+                {resumo.em_analise > 0 && ` · ${formatBRL(resumo.em_analise)} da reserva são solicitações em análise`}
               </p>
               <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-              <Card label="Saldo" v={resumo.saldo} />
-              <Card label="Reserva" v={resumo.reserva} />
-              <Card label="Saldo à utilizar" v={resumo.saldo_a_utilizar} destaque />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <Card label="Saldo (verba do mês)" v={resumo.saldo} />
+              <Card label="− Reserva" v={resumo.reserva} />
+              <Card label="− Liberado" v={resumo.liberado} />
+              <Card label="= Saldo à utilizar" v={resumo.saldo_a_utilizar} destaque />
             </div>
           </>
         )}
@@ -371,16 +372,28 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               {/* Reservas em aberto */}
               <section className="bg-white rounded-xl p-5 shadow-sm">
                 <h2 className="font-heading text-lg mb-3" style={{ color: "#072a3c" }}>
-                  Reservas em aberto ({reservasAbertas.length})
+                  Aguardando baixa ({reservasAbertas.length})
                 </h2>
                 {reservasAbertas.length === 0 ? (
-                  <p className="text-sm text-gray-500">Nenhuma reserva em aberto.</p>
+                  <p className="text-sm text-gray-500">Nada aguardando baixa.</p>
                 ) : (
                   <ul className="flex flex-col divide-y divide-gray-100">
                     {reservasAbertas.map((l) => (
                       <li key={l.id} className="py-3 flex flex-wrap items-center gap-3 justify-between">
                         <div className="min-w-0">
-                          <p className="font-semibold tabular-nums">{formatBRL(l.valor)}</p>
+                          <p className="font-semibold tabular-nums">
+                            {formatBRL(l.valor)}
+                            <span
+                              className="ml-2 text-xs rounded-full px-2 py-0.5 font-semibold"
+                              style={
+                                l.solicitacao_id
+                                  ? { color: "#1f7a4d", background: "#e8f3ec" }
+                                  : { color: "#8a6a1f", background: "#fbf3e0" }
+                              }
+                            >
+                              {l.solicitacao_id ? "✓ Liberado (aprovado pelo gestor)" : "Reserva manual"}
+                            </span>
+                          </p>
                           <p className="text-sm text-gray-600 truncate">
                             {l.franqueado || "Sem franqueado"}
                             {l.descricao && ` · ${l.descricao}`}

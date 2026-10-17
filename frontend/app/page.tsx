@@ -279,26 +279,34 @@ export default function PainelPage() {
                     {r.nome} · {formatMes(mes)}
                   </h2>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
                     <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo</p>
                     <p className="text-2xl">
                       <Valor v={r.saldo} destaque />
                     </p>
+                    <p className="text-xs mt-1 text-gray-500">verba do mês</p>
                   </div>
-                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Reserva</p>
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: `4px solid ${SITUACAO.em_analise.cor}` }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Reserva</p>
                     <p className="text-2xl">
                       <Valor v={r.reserva} destaque />
                     </p>
-                    {r.em_analise > 0 && (
-                      <p className="text-xs mt-1" style={{ color: "#8a6a1f" }}>
-                        inclui {formatBRL(r.em_analise)} em análise
-                      </p>
-                    )}
+                    <p className="text-xs mt-1" style={{ color: SITUACAO.em_analise.cor }}>
+                      ◷ aguardando aprovação do gestor
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: `4px solid ${SITUACAO.aprovada.cor}` }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Liberado</p>
+                    <p className="text-2xl">
+                      <Valor v={r.liberado} destaque />
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: SITUACAO.aprovada.cor }}>
+                      ✓ aprovado pelo gestor
+                    </p>
                   </div>
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #c2a360" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo à utilizar</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">= Saldo à utilizar</p>
                     <p className="text-2xl">
                       <Valor v={r.saldo_a_utilizar} destaque />
                     </p>
@@ -340,10 +348,10 @@ export default function PainelPage() {
             )}
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
-              A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês menos o
-              que já foi utilizado. <strong>Reserva</strong>: valores aprovados aguardando uso e solicitações em análise
-              (já saem do disponível enquanto o gestor analisa; se não aprovadas, voltam). <strong>Saldo à utilizar</strong>:
-              o que ainda está livre.
+              A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
+              <strong>Reserva</strong>: solicitações aguardando o gestor (se não aprovadas, o valor volta).{" "}
+              <strong>Liberado</strong>: aprovado pelo gestor (passa da Reserva para cá). <strong>Saldo à utilizar</strong> =
+              Saldo − Reserva − Liberado: o que ainda está livre.
             </p>
           </>
         )}

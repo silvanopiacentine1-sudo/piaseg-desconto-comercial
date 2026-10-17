@@ -58,7 +58,7 @@ export default function AdminPage() {
   }
 
   const ativas = (linhas ?? []).filter((l) => l.ativa);
-  const total = (k: "saldo" | "reserva" | "saldo_a_utilizar") => ativas.reduce((acc, l) => acc + l[k], 0);
+  const total = (k: "saldo" | "reserva" | "liberado" | "saldo_a_utilizar") => ativas.reduce((acc, l) => acc + l[k], 0);
 
   return (
     <>
@@ -120,6 +120,7 @@ export default function AdminPage() {
                   <th className="px-4 py-3 font-semibold">Seguradora</th>
                   <th className="px-4 py-3 font-semibold text-right">Saldo</th>
                   <th className="px-4 py-3 font-semibold text-right">Reserva</th>
+                  <th className="px-4 py-3 font-semibold text-right">Liberado</th>
                   <th className="px-4 py-3 font-semibold text-right" style={{ color: "#d6bd8a" }}>
                     Saldo à utilizar
                   </th>
@@ -138,6 +139,7 @@ export default function AdminPage() {
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(l.saldo)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.reserva)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.liberado)}</td>
                     <td
                       className="px-4 py-3 text-right tabular-nums font-bold"
                       style={{ color: l.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}
@@ -157,7 +159,7 @@ export default function AdminPage() {
                 ))}
                 {linhas.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
                       Nenhuma seguradora cadastrada. Comece cadastrando acima.
                     </td>
                   </tr>
@@ -169,6 +171,7 @@ export default function AdminPage() {
                     <td className="px-4 py-3">Total (ativas)</td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("saldo"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("reserva"))}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("liberado"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums" style={{ color: "#072a3c" }}>
                       {formatBRL(total("saldo_a_utilizar"))}
                     </td>
