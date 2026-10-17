@@ -251,7 +251,7 @@ export default function PainelPage() {
   return (
     <>
       <header className="w-full" style={{ background: "#072a3c", borderBottom: "3px solid #c2a360" }}>
-        <div className="max-w-5xl mx-auto px-4 py-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-4 py-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-white/60 mb-1">Piaseg Franchising</p>
             <h1 className="font-heading text-2xl sm:text-3xl" style={{ color: "#c2a360" }}>
@@ -269,7 +269,7 @@ export default function PainelPage() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
         {erro && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6">{erro}</p>
         )}
@@ -288,61 +288,66 @@ export default function PainelPage() {
 
         {painel && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
-                Escolha a seguradora
-              </h2>
-              <div className="flex flex-wrap items-center gap-3">
-                {!treino && (
-                  <button
-                    onClick={alternarTreino}
-                    className="text-xs rounded-full px-3 py-1.5 cursor-pointer"
-                    style={{ background: "#ede9fe", color: "#5b21b6" }}
-                    title="Simulação para treinar novos franqueados — não altera os saldos reais"
-                  >
-                    🎓 Modo treinamento
-                  </button>
-                )}
-                <SeletorMes mes={mes} meses={painel.meses} onChange={setMes} />
-              </div>
-            </div>
-
             {painel.seguradoras.length === 0 ? (
               <p className="text-gray-500 bg-white rounded-xl p-6 shadow-sm">Nenhuma seguradora cadastrada ainda.</p>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
-                {painel.seguradoras.map((s) => {
-                  const ativa = s.id === segId;
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => escolher(s.id)}
-                      aria-pressed={ativa}
-                      className="bg-white rounded-xl p-3 shadow-sm text-left flex flex-col gap-2 cursor-pointer transition"
-                      style={{ outline: ativa ? "3px solid #c2a360" : "1px solid #e8e6df", outlineOffset: ativa ? 0 : -1 }}
-                    >
-                      <Logo nome={s.nome} url={s.logo_url} size={34} />
-                      <span className="font-semibold text-sm" style={{ color: "#072a3c" }}>
-                        {s.nome}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        Disponível <Valor v={s.saldo_a_utilizar} />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+              <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)] gap-6 items-start">
+                {/* Coluna das seguradoras: lista lateral no computador, faixa rolável no celular */}
+                <nav
+                  aria-label="Seguradoras"
+                  className="min-w-0 lg:sticky lg:top-4 bg-white rounded-xl shadow-sm p-2 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto"
+                >
+                  <p className="hidden lg:block text-xs uppercase tracking-wider text-gray-500 px-3 pt-2 pb-1">Seguradoras</p>
+                  <ul className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-1 lg:pb-0">
+                    {painel.seguradoras.map((s) => {
+                      const ativa = s.id === segId;
+                      return (
+                        <li key={s.id} className="shrink-0 lg:shrink">
+                          <button
+                            onClick={() => escolher(s.id)}
+                            aria-current={ativa ? "true" : undefined}
+                            className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left cursor-pointer transition"
+                            style={
+                              ativa
+                                ? { background: "#072a3c", color: "#f6f6f6", boxShadow: "inset 4px 0 0 #c2a360" }
+                                : { color: "#072a3c" }
+                            }
+                          >
+                            <Logo nome={s.nome} url={s.logo_url} size={22} />
+                            <span className="min-w-0">
+                              <span className="block text-sm font-semibold whitespace-nowrap lg:whitespace-normal">{s.nome}</span>
+                              <span className="block text-xs whitespace-nowrap" style={{ color: ativa ? "#d6bd8a" : "#6b7280" }}>
+                                Disponível {formatBRL(s.saldo_a_utilizar)}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </nav>
 
-            {r && (
-              <>
-                <div className="flex flex-wrap items-center gap-3 mb-3">
-                  <Logo nome={r.nome} url={r.logo_url} size={40} />
-                  <h2 className="font-heading text-xl" style={{ color: "#072a3c" }}>
-                    {r.nome} · {formatMes(mes)}
-                  </h2>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {/* Quadros da seguradora escolhida, ao lado da lista */}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    {r ? (
+                      <div className="flex items-center gap-3">
+                        <Logo nome={r.nome} url={r.logo_url} size={40} />
+                        <h2 className="font-heading text-xl" style={{ color: "#072a3c" }}>
+                          {r.nome} · {formatMes(mes)}
+                        </h2>
+                      </div>
+                    ) : (
+                      <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
+                        Escolha a seguradora
+                      </h2>
+                    )}
+                    <SeletorMes mes={mes} meses={painel.meses} onChange={setMes} />
+                  </div>
+
+                  {r && (
+                    <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
                     <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo</p>
                     <p className="text-2xl">
@@ -407,7 +412,10 @@ export default function PainelPage() {
                     </ul>
                   )}
                 </section>
-              </>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
