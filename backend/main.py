@@ -1160,7 +1160,8 @@ def export_excel(_: None = Depends(require_admin)):
             c.number_format = brl
 
     ws2 = wb.create_sheet("Extrato")
-    ws2.append(["Data", "Seguradora", "Tipo", "Valor", "Situação", "Franqueado", "Descrição", "Lançado por", "Observações"])
+    ws2.append(["Data", "Seguradora", "Tipo", "Valor", "Situação", "Franqueado", "Descrição", "Lançado por",
+                "Lançado em", "Observações"])
     for l in sorted(lancamentos, key=lambda l: (l["data"], l["created_at"])):
         if l.get("estornado"):
             situacao = "Estornado"
@@ -1175,7 +1176,8 @@ def export_excel(_: None = Depends(require_admin)):
         ws2.append([
             _br_date(l["data"]), nomes.get(l["seguradora_id"], "?"), TIPO_LABEL[l["tipo"]],
             l["valor_centavos"] / 100, situacao, l.get("franqueado", ""), l.get("descricao", ""),
-            l.get("operador", ""), obs,
+            l.get("operador", ""),
+            datetime.fromisoformat(l["created_at"]).astimezone(SP_TZ).strftime("%d/%m/%Y %H:%M"), obs,
         ])
     for row in ws2.iter_rows(min_row=2, min_col=4, max_col=4):
         for c in row:
