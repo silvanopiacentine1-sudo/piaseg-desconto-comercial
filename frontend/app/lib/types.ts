@@ -78,6 +78,7 @@ export interface Movimento {
   canal?: string | null;
   criado_por?: string | null;
   teste?: boolean;
+  nota_gestor?: string;
   resposta?: string;
   respondido_por?: string;
   respondido_em?: string | null;
@@ -135,6 +136,7 @@ export interface Solicitacao {
   reserva_status?: StatusReserva | "estornada";
   saldo_a_utilizar_atual?: number;
   teste?: boolean;
+  nota_gestor?: string;
   origem?: "gestor";
   canal?: string;
   criado_por?: string;

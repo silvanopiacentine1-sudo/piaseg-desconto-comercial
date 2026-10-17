@@ -86,7 +86,7 @@ function Detalhe({ id }: { id: string }) {
         {s.status !== "pendente" && (
           <div className="mt-4">
             <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-              Resposta de {s.respondido_por} {s.respondido_em && `· ${formatDateTime(s.respondido_em)}`}
+              Resposta do gestor {s.gestor_nome} {s.respondido_em && `· ${formatDateTime(s.respondido_em)}`}
             </p>
             <p
               className="text-sm whitespace-pre-wrap rounded-lg p-3"

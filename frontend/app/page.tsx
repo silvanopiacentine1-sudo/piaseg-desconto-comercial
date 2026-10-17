@@ -36,7 +36,7 @@ function Valor({ v, destaque = false }: { v: number; destaque?: boolean }) {
   );
 }
 
-function Badge({ situacao }: { situacao: Movimento["situacao"] }) {
+function Badge({ situacao, label }: { situacao: Movimento["situacao"]; label?: string }) {
   const s = SITUACAO[situacao];
   return (
     <span
@@ -44,7 +44,7 @@ function Badge({ situacao }: { situacao: Movimento["situacao"] }) {
       style={{ color: s.cor, background: s.fundo }}
     >
       <span className="w-2 h-2 rounded-full" style={{ background: s.cor }} aria-hidden />
-      {s.label}
+      {label ?? s.label}
     </span>
   );
 }
@@ -67,7 +67,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             {formatDate(m.data)}
             {m.numero && ` · Solicitação #${m.numero}`}
             {m.gestor_nome && !m.criado_por && ` · para ${m.gestor_nome}`}
-            {m.criado_por && ` · pedido via ${m.canal}, reservado por ${m.criado_por}`}
+            {m.criado_por && ` · pedido via ${m.canal}, reservado pelo gestor ${m.gestor_nome}`}
             {m.origem === "lancamento" && m.situacao !== "credito" && m.descricao && ` · ${m.descricao}`}
           </p>
         </div>
@@ -86,7 +86,10 @@ function LinhaMovimento({ m }: { m: Movimento }) {
       </div>
       <div>
         <span className="flex flex-wrap gap-2">
-          <Badge situacao={m.situacao} />
+          <Badge
+            situacao={m.situacao}
+            label={m.situacao === "em_analise" && m.criado_por ? "Reserva · negociação em andamento" : undefined}
+          />
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
       </div>
@@ -96,13 +99,21 @@ function LinhaMovimento({ m }: { m: Movimento }) {
           {m.observacao}
         </p>
       )}
+      {m.nota_gestor && m.situacao === "em_analise" && (
+        <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: "#fbf3e0" }}>
+          <span className="block text-xs uppercase tracking-wider" style={{ color: "#8a6a1f" }}>
+            Observação do gestor {m.gestor_nome}
+          </span>
+          {m.nota_gestor}
+        </p>
+      )}
       {m.origem === "solicitacao" && m.situacao !== "em_analise" && (m.resposta || m.respondido_por) && (
         <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: s.fundo }}>
           <span className="block text-xs uppercase tracking-wider" style={{ color: s.cor }}>
-            Resposta de {m.respondido_por}
+            Resposta do gestor {m.gestor_nome}
             {m.respondido_em && ` · ${formatDateTime(m.respondido_em)}`}
           </span>
-          {m.resposta || "—"}
+          {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado e liberado.")}
         </p>
       )}
     </li>

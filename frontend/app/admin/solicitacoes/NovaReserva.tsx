@@ -78,7 +78,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
       onCriada(
         aprovar
           ? `Reserva #${s.numero} de ${formatBRL(v)} para ${franqueado} criada e liberada. Já aparece no painel do franqueado.`
-          : `Solicitação #${s.numero} de ${formatBRL(v)} para ${franqueado} registrada em análise.`,
+          : `Reserva #${s.numero} de ${formatBRL(v)} para ${franqueado} feita. Quando o negócio fechar, aprove em Pendentes.`,
       );
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao salvar");
@@ -171,32 +171,64 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg p-3" style={{ background: "#f6f6f6" }}>
-        <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
-          <input type="checkbox" checked={aprovar} onChange={(e) => setAprovar(e.target.checked)} />
-          Já aprovar e liberar agora
-        </label>
-        {aprovar ? (
-          <textarea
-            value={resposta}
-            onChange={(e) => setResposta(e.target.value)}
-            rows={2}
-            placeholder="Resposta ao franqueado (opcional) — aparece no painel"
-            className={`${input} mt-2 text-sm`}
-          />
-        ) : (
-          <p className="text-xs text-gray-500 mt-1">Fica em análise na fila de Pendentes, como um pedido feito pelo próprio franqueado.</p>
-        )}
-      </div>
+      <fieldset className="mt-4">
+        <legend className="block text-sm font-medium mb-2">Situação *</legend>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {[
+            {
+              v: true,
+              titulo: "✓ Já aprovar e liberar agora",
+              texto: "Negócio fechado: o valor vai direto para Liberado.",
+              cor: "#1f7a4d",
+              fundo: "#e8f3ec",
+            },
+            {
+              v: false,
+              titulo: "◷ Reserva",
+              texto: "Negociação ainda em andamento: o valor fica separado em Reserva. Quando o franqueado fechar o negócio, você aprova em Pendentes.",
+              cor: "#8a6a1f",
+              fundo: "#fbf3e0",
+            },
+          ].map((o) => {
+            const ativo = aprovar === o.v;
+            return (
+              <label
+                key={String(o.v)}
+                className="rounded-lg p-3 cursor-pointer flex gap-2 items-start"
+                style={{ background: ativo ? o.fundo : "#f6f6f6", outline: ativo ? `2px solid ${o.cor}` : "1px solid #e8e6df" }}
+              >
+                <input type="radio" name="situacao" checked={ativo} onChange={() => setAprovar(o.v)} className="mt-1" />
+                <span>
+                  <span className="block text-sm font-semibold" style={{ color: o.cor }}>
+                    {o.titulo}
+                  </span>
+                  <span className="block text-xs text-gray-600 mt-0.5">{o.texto}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <textarea
+          value={resposta}
+          onChange={(e) => setResposta(e.target.value)}
+          rows={2}
+          placeholder={
+            aprovar
+              ? "Mensagem ao franqueado (opcional) — aparece no painel"
+              : "Observação da reserva (opcional), ex.: aguardando o cliente assinar"
+          }
+          className={`${input} mt-3 text-sm`}
+        />
+      </fieldset>
 
       {erro && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-3">{erro}</p>}
       <button
         type="submit"
         disabled={enviando}
         className="mt-4 rounded-lg px-5 py-2.5 font-semibold text-white cursor-pointer disabled:opacity-60"
-        style={{ background: aprovar ? "#1f7a4d" : "#072a3c" }}
+        style={{ background: aprovar ? "#1f7a4d" : "#8a6a1f" }}
       >
-        {enviando ? "Salvando..." : aprovar ? "✓ Reservar e liberar" : "Registrar em análise"}
+        {enviando ? "Salvando..." : aprovar ? "✓ Aprovar e liberar" : "◷ Fazer a reserva"}
       </button>
     </form>
   );

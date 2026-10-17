@@ -23,6 +23,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const st = SOLIC_STATUS[s.status];
+  const reservaGestor = s.origem === "gestor" && s.status === "pendente";
   const excede = s.saldo_a_utilizar_atual !== undefined && s.valor > s.saldo_a_utilizar_atual;
 
   async function responder(decisao: "aprovar" | "reprovar") {
@@ -80,7 +81,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
             </span>
           )}
           <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
-            {st.label}
+            {reservaGestor ? "◷ Reserva · negociação em andamento" : st.label}
           </span>
         </div>
       </div>
@@ -88,6 +89,12 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       <div className="text-sm rounded-lg p-3 mb-3 whitespace-pre-wrap" style={{ background: "#f6f6f6" }}>
         <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Justificativa do franqueado</span>
         {s.observacao || <span className="text-gray-400">Sem observação.</span>}
+        {s.nota_gestor && (
+          <span className="block mt-2 pt-2 border-t border-gray-200">
+            <span className="block text-xs uppercase tracking-wider text-gray-500">Observação da reserva ({s.criado_por})</span>
+            {s.nota_gestor}
+          </span>
+        )}
       </div>
 
       {s.status === "pendente" ? (
@@ -100,7 +107,11 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
             value={resposta}
             onChange={(e) => setResposta(e.target.value)}
             rows={3}
-            placeholder="Resposta ao franqueado (obrigatória para não aprovar)"
+            placeholder={
+              reservaGestor
+                ? "Mensagem ao franqueado (obrigatória se o negócio não fechou)"
+                : "Resposta ao franqueado (obrigatória para não aprovar)"
+            }
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
           />
           {erro && <p className="text-sm text-red-600 mb-2">{erro}</p>}
@@ -111,7 +122,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer disabled:opacity-60"
               style={{ background: "#1f7a4d" }}
             >
-              ✓ Aprovar e reservar
+              {reservaGestor ? "✓ Negócio fechado — aprovar e liberar" : "✓ Aprovar e liberar"}
             </button>
             <button
               onClick={() => responder("reprovar")}
@@ -119,14 +130,16 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer disabled:opacity-60"
               style={{ background: "#b42318" }}
             >
-              ✕ Não aprovar
+              {reservaGestor ? "✕ Não fechou — cancelar reserva" : "✕ Não aprovar"}
             </button>
           </div>
         </>
       ) : (
         <div className="text-sm rounded-lg p-3 whitespace-pre-wrap" style={{ background: st.fundo }}>
           <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">
-            Resposta de {s.respondido_por} · {s.respondido_em && formatDateTime(s.respondido_em)}
+            Resposta do gestor {s.gestor_nome}
+            {s.respondido_por && s.respondido_por !== s.gestor_nome && ` (lançada por ${s.respondido_por})`} ·{" "}
+            {s.respondido_em && formatDateTime(s.respondido_em)}
           </span>
           {s.resposta || "—"}
           {s.status === "aprovada" && (

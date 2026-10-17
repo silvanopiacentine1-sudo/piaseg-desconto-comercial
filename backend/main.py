@@ -471,6 +471,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "franqueado": s["franqueado"], "observacao": s.get("observacao", ""),
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
+            "nota_gestor": s.get("nota_gestor", ""),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
         })
@@ -962,6 +963,9 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
         }
         if body.aprovar:
             _decidir(s, True, body.resposta.strip(), operador)
+        elif body.resposta.strip():
+            # reserva com negociação em andamento: observação do gestor
+            s["nota_gestor"] = body.resposta.strip()
         solicitacoes.append(s)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), gestores, _load(LANCAMENTOS_FILE))
