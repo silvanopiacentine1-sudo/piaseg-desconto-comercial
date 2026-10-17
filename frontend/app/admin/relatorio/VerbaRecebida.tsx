@@ -72,7 +72,7 @@ function GraficoMeses({ v }: { v: Verba }) {
         </h3>
         <div className="flex gap-4 text-xs text-gray-600">
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm" style={{ background: COR_GERAL }} /> Verba geral
+            <span className="w-3 h-3 rounded-sm" style={{ background: COR_GERAL }} /> Automóvel
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-sm" style={{ background: COR_ESPECIAL }} /> Desconto especial
@@ -134,7 +134,7 @@ function GraficoMeses({ v }: { v: Verba }) {
             </p>
             <p className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-sm" style={{ background: COR_GERAL }} />
-              Geral: <strong className="tabular-nums">{formatBRL(v.totais_mes.geral[hover])}</strong>
+              Automóvel: <strong className="tabular-nums">{formatBRL(v.totais_mes.geral[hover])}</strong>
             </p>
             <p className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-sm" style={{ background: COR_ESPECIAL }} />
@@ -209,7 +209,7 @@ export default function VerbaRecebida() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             <Kpi label={`Total recebido em ${v.ano}`} valor={formatBRL(v.total_ano)} />
-            <Kpi label="Verba geral" valor={formatBRL(v.geral_ano)} />
+            <Kpi label="Automóvel" valor={formatBRL(v.geral_ano)} />
             <Kpi
               label="Descontos especiais"
               valor={formatBRL(v.especial_ano)}
@@ -269,7 +269,7 @@ export default function VerbaRecebida() {
                             <tr className="bg-[#f6f6f6] text-xs">
                               <td className="px-3 py-2 pl-10 sticky left-0 bg-[#f6f6f6] whitespace-nowrap">
                                 <span className="inline-block w-2 h-2 rounded-sm mr-1.5" style={{ background: COR_GERAL }} />
-                                Verba geral
+                                Automóvel
                               </td>
                               {s.geral.map((x, i) => (
                                 <td key={i} className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
@@ -311,7 +311,7 @@ export default function VerbaRecebida() {
                 </table>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                Clique numa seguradora para ver a divisão entre verba geral e desconto especial.
+                Clique numa seguradora para ver a divisão entre Automóvel e desconto especial.
               </p>
             </>
           )}

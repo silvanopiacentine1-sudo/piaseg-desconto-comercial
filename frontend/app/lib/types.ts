@@ -111,7 +111,7 @@ const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "J
 
 /** Rótulo da verba: "" = geral; senão nome do desconto especial. */
 export function nomeVerba(categoria?: string | null): string {
-  return categoria ? `Especial: ${categoria}` : "Verba geral";
+  return categoria ? `Especial: ${categoria}` : "Automóvel";
 }
 
 export const ESPECIAL_COR = { cor: "#9a3412", fundo: "#fff1e8" }; // selo laranja do desconto especial

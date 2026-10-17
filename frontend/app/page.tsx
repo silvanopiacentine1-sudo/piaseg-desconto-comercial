@@ -364,7 +364,7 @@ export default function PainelPage() {
                     <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · verba geral"}</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · Automóvel"}</p>
                     <p className="text-2xl">
                       <Valor v={r.saldo} destaque />
                     </p>
@@ -409,7 +409,7 @@ export default function PainelPage() {
                       ★ Descontos especiais
                     </h3>
                     <p className="text-xs text-gray-500 mb-3">
-                      Verba da seguradora para um produto específico, com saldo próprio (não se mistura com a verba geral).
+                      Verba da seguradora para um produto específico, com saldo próprio (não se mistura com a verba de Automóvel).
                     </p>
                     <div className="flex flex-col gap-3">
                       {esp.map((e) => (

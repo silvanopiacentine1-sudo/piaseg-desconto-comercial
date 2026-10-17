@@ -170,7 +170,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
           return;
         }
         if (!Number.isFinite(vx) || vx <= 0) {
-          setErro(`Informe um valor válido para ${c ? `"${c}"` : "a verba geral"}.`);
+          setErro(`Informe um valor válido para ${c ? `"${c}"` : "Automóvel"}.`);
           return;
         }
         linhas.push({ categoria: c, valor: vx });
@@ -199,7 +199,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       setAviso(
         linhas.length > 1
           ? `${linhas.length} créditos lançados por ${operador} em ${quando}: ` +
-              linhas.map((l) => `${l.categoria || "Verba geral"} ${formatBRL(l.valor)}`).join(" · ") +
+              linhas.map((l) => `${l.categoria || "Automóvel"} ${formatBRL(l.valor)}`).join(" · ") +
               ". O painel dos franqueados já foi atualizado."
           : `${TIPO_LABEL[tipo]} de ${formatBRL(v)} lançado por ${operador} em ${quando}. ` +
               "O painel dos franqueados já foi atualizado.",
@@ -367,7 +367,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
             {especiais.length > 0 && (
               <div className="mb-8 -mt-4">
                 <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: ESPECIAL_COR.cor }}>
-                  ★ Descontos especiais (saldo próprio, separado da verba geral acima)
+                  ★ Descontos especiais (saldo próprio, separado da verba de Automóvel acima)
                 </p>
                 <div className="grid gap-3">
                   {especiais.map((e) => (
@@ -441,7 +441,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                   onChange={(e) => setVerba(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
                 >
-                  <option value="">Verba geral</option>
+                  <option value="">Automóvel</option>
                   {categorias.map((c) => (
                     <option key={c} value={c}>
                       ★ Desconto especial: {c}
@@ -462,7 +462,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 )}
                 {verba && (
                   <p className="text-xs mt-1" style={{ color: ESPECIAL_COR.cor }}>
-                    Desconto especial tem saldo próprio, separado da verba geral.
+                    Desconto especial tem saldo próprio, separado da verba de Automóvel.
                   </p>
                 )}
               </div>
@@ -514,7 +514,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                         onChange={(e) => setExtras(extras.map((y, n) => (n === k ? { ...y, verba: e.target.value } : y)))}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm"
                       >
-                        <option value="">Verba geral</option>
+                        <option value="">Automóvel</option>
                         {categorias.map((c) => (
                           <option key={c} value={c}>
                             ★ Desconto especial: {c}

@@ -134,7 +134,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
             <div className="mt-3">
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Verba geral — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
                     ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}

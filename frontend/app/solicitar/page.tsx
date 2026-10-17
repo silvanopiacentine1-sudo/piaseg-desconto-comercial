@@ -138,7 +138,7 @@ function Formulario() {
             <div>
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Verba geral — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
                     ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
@@ -146,7 +146,7 @@ function Formulario() {
                 ))}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Desconto especial é para um produto específico e tem saldo próprio.
+                Desconto especial é para um produto específico e tem saldo próprio, separado do Automóvel.
               </p>
             </div>
           )}

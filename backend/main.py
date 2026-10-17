@@ -1261,13 +1261,13 @@ def relatorio_verba_export(ano: Optional[int] = None, _: None = Depends(require_
     cab = ["Seguradora", "Verba"] + rel["meses"] + [f"Total {rel['ano']}"]
     ws.append(cab)
     for r in rel["seguradoras"]:
-        ws.append([r["nome"], "Geral"] + r["geral"] + [r["geral_ano"]])
+        ws.append([r["nome"], "Automóvel"] + r["geral"] + [r["geral_ano"]])
         if r["especial_ano"]:
             nomes_esp = ", ".join(e["categoria"] for e in r["especiais"])
             ws.append([r["nome"], f"Especial ({nomes_esp})"] + r["especial"] + [r["especial_ano"]])
         ws.append([r["nome"], "Total"] + r["total"] + [r["total_ano"]])
     t = rel["totais_mes"]
-    ws.append(["TOTAL", "Geral"] + t["geral"] + [rel["geral_ano"]])
+    ws.append(["TOTAL", "Automóvel"] + t["geral"] + [rel["geral_ano"]])
     ws.append(["TOTAL", "Especial"] + t["especial"] + [rel["especial_ano"]])
     ws.append(["TOTAL", "Total"] + t["total"] + [rel["total_ano"]])
     brl = '"R$" #,##0.00;[Red]-"R$" #,##0.00'
@@ -1341,7 +1341,7 @@ def export_excel(_: None = Depends(require_admin)):
             situacao, obs = "", ""
         ws2.append([
             _br_date(l["data"]), nomes.get(l["seguradora_id"], "?"),
-            f"Especial: {_cat(l)}" if _cat(l) else "Geral", TIPO_LABEL[l["tipo"]],
+            f"Especial: {_cat(l)}" if _cat(l) else "Automóvel", TIPO_LABEL[l["tipo"]],
             l["valor_centavos"] / 100, situacao, l.get("franqueado", ""), l.get("descricao", ""),
             l.get("operador", ""),
             datetime.fromisoformat(l["created_at"]).astimezone(SP_TZ).strftime("%d/%m/%Y %H:%M"), obs,
