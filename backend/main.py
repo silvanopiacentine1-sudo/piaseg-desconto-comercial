@@ -651,6 +651,13 @@ def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(req
 @app.post("/admin/seguradoras/{seg_id}/lancamentos", status_code=201)
 def create_lancamento(seg_id: str, body: LancamentoIn, _: None = Depends(require_admin)):
     operador = _operador(body.operador)
+    # "Lançado por" tem que ser um gestor cadastrado e ativo (não aceita nome livre)
+    gestor = next(
+        (g for g in _load(GESTORES_FILE) if g.get("ativo", True) and g["nome"].strip().lower() == operador.lower()), None
+    )
+    if not gestor:
+        raise HTTPException(400, "Selecione um gestor cadastrado no campo \"Lançado por\"")
+    operador = gestor["nome"]
     data = body.data or _hoje_sp()
     try:
         datetime.strptime(data, "%Y-%m-%d")

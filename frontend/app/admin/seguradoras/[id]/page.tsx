@@ -66,7 +66,6 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
   const [gestores, setGestores] = useState<string[]>([]);
 
   useEffect(() => {
-    setLancadoPor(getOperador());
     apiJson<{ nome: string; ativo?: boolean }[]>("/admin/gestores")
       .then((l) => setGestores(l.filter((g) => g.ativo !== false).map((g) => g.nome)))
       .catch(() => {});
@@ -126,7 +125,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
     }
     const operador = lancadoPor.trim();
     if (!operador) {
-      setErro("Informe seu nome no campo \"Lançado por\".");
+      setErro("Selecione o gestor no campo \"Lançado por\".");
       return;
     }
     setSalvando(true);
@@ -368,23 +367,27 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Lançado por (seu nome) *
-                </label>
-                <input
+                <label className="block text-sm font-medium mb-1">Lançado por (gestor) *</label>
+                <select
                   value={lancadoPor}
                   onChange={(e) => setLancadoPor(e.target.value)}
-                  list="lista-gestores"
-                  placeholder="Nome de quem está lançando"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
                   required
-                />
-                <datalist id="lista-gestores">
+                >
+                  <option value="">Selecione o gestor...</option>
                   {gestores.map((g) => (
-                    <option key={g} value={g} />
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
                   ))}
-                </datalist>
-                <p className="text-xs text-gray-400 mt-1">Fica registrado com a data e a hora exatas do lançamento.</p>
+                </select>
+                {gestores.length === 0 ? (
+                  <p className="text-xs text-red-600 mt-1">
+                    Nenhum gestor cadastrado. Cadastre em Gestores para poder lançar.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">Fica registrado com a data e a hora exatas do lançamento.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Descrição</label>
