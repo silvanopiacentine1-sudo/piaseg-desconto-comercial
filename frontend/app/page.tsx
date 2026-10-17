@@ -419,6 +419,30 @@ export default function PainelPage() {
           </>
         )}
         <MinhasSolicitacoes />
+
+        <aside
+          className="mt-10 rounded-xl p-5 sm:p-6"
+          style={{ background: "#072a3c", borderLeft: "6px solid #c2a360" }}
+          aria-label="Comunicado importante"
+        >
+          <p className="font-heading text-base sm:text-lg mb-3" style={{ color: "#c2a360" }}>
+            ⚠ Comunicado Importante: Saldo de Descontos da Rede
+          </p>
+          <div className="text-sm leading-relaxed space-y-3" style={{ color: "#f6f6f6" }}>
+            <p>
+              Prezados, relembramos que o saldo de descontos com a seguradora é um <strong>recurso global para toda a rede</strong>.
+              Diante disso, solicitamos o bom senso e a moderação de cada unidade na sua utilização, para que o benefício seja
+              distribuído de forma justa.
+            </p>
+            <p>
+              Ressaltamos também que a atualização do saldo ocorre <strong>estritamente após o envio do report por parte da
+              seguradora</strong>, impossibilitando a previsão antecipada dos valores disponíveis.
+            </p>
+            <p className="font-semibold" style={{ color: "#d6bd8a" }}>
+              Contamos com a colaboração de todos!
+            </p>
+          </div>
+        </aside>
       </main>
 
       <footer className="text-center text-xs text-gray-400 py-6">Piaseg Franchising</footer>
