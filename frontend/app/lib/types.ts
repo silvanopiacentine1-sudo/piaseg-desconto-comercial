@@ -4,6 +4,7 @@ export type StatusReserva = "aberta" | "utilizada" | "cancelada";
 export interface Resumo {
   id: string;
   nome: string;
+  logo_url: string | null;
   ativa: boolean;
   creditos: number;
   utilizado: number;
@@ -34,10 +35,44 @@ export interface Lancamento {
 }
 
 export interface PainelPublico {
-  seguradoras: Pick<Resumo, "id" | "nome" | "saldo" | "reserva" | "saldo_a_utilizar" | "atualizado_em">[];
+  seguradoras: Pick<Resumo, "id" | "nome" | "logo_url" | "saldo" | "reserva" | "saldo_a_utilizar" | "atualizado_em">[];
   totais: { saldo: number; reserva: number; saldo_a_utilizar: number };
   atualizado_em: string | null;
 }
+
+export interface Gestor {
+  id: string;
+  nome: string;
+  email?: string;
+  ativo?: boolean;
+}
+
+export type StatusSolicitacao = "pendente" | "aprovada" | "reprovada";
+
+export interface Solicitacao {
+  id: string;
+  numero: number;
+  seguradora_id: string;
+  seguradora_nome: string;
+  valor: number;
+  franqueado: string;
+  gestor_id: string;
+  gestor_nome: string;
+  observacao: string;
+  status: StatusSolicitacao;
+  created_at: string;
+  resposta?: string;
+  respondido_por?: string;
+  respondido_em?: string;
+  reserva_status?: StatusReserva | "estornada";
+  saldo_a_utilizar_atual?: number;
+}
+
+export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
+  pendente: { label: "Aguardando análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
+  aprovada: { label: "Aprovada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
+};
 
 export const TIPO_LABEL: Record<TipoLancamento, string> = {
   credito: "Crédito",

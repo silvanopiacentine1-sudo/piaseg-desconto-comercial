@@ -4,7 +4,9 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../../components/Header";
+import Logo from "../../../components/Logo";
 import { apiJson } from "../../../lib/api";
+import { enviarLogo } from "../../../lib/logo";
 import { getOperador, isAdminLoggedIn } from "../../../lib/auth";
 import {
   STATUS_LABEL,
@@ -207,9 +209,42 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 </>
               ) : (
                 <>
+                  <Logo nome={resumo.nome} url={resumo.logo_url} size={44} />
                   <h1 className="font-heading text-2xl" style={{ color: "#072a3c" }}>
                     {resumo.nome}
                   </h1>
+                  <label className="text-sm text-gray-500 hover:underline cursor-pointer">
+                    {resumo.logo_url ? "Trocar logo" : "Enviar logo"}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!f) return;
+                        setErro("");
+                        try {
+                          await enviarLogo(id, f);
+                          await carregar();
+                        } catch (err) {
+                          setErro(err instanceof Error ? err.message : "Erro ao enviar logo");
+                        }
+                      }}
+                    />
+                  </label>
+                  {resumo.logo_url && (
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm("Remover a logo desta seguradora?")) return;
+                        await apiJson(`/admin/seguradoras/${id}/logo`, { method: "DELETE" }).catch(() => {});
+                        await carregar();
+                      }}
+                      className="text-sm text-gray-500 hover:underline cursor-pointer"
+                    >
+                      Remover logo
+                    </button>
+                  )}
                   {!resumo.ativa && (
                     <span className="text-xs rounded-full px-2 py-0.5 bg-gray-200 text-gray-600">Inativa — fora do painel</span>
                   )}

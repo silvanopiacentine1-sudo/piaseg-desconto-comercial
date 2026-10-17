@@ -3,14 +3,20 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiJson } from "../lib/api";
 import { getOperador, logout, setOperador } from "../lib/auth";
 
 export default function Header() {
   const router = useRouter();
   const [operador, setOperadorState] = useState("");
 
+  const [pendentes, setPendentes] = useState(0);
+
   useEffect(() => {
     setOperadorState(getOperador());
+    apiJson<{ status: string }[]>("/admin/solicitacoes")
+      .then((l) => setPendentes(l.filter((s) => s.status === "pendente").length))
+      .catch(() => {});
   }, []);
 
   function handleLogout() {
@@ -35,6 +41,21 @@ export default function Header() {
         <nav className="flex flex-wrap items-center gap-4 text-sm">
           <Link href="/admin" className="text-white/90 hover:text-white font-semibold">
             Seguradoras
+          </Link>
+          <Link href="/admin/solicitacoes" className="text-white/90 hover:text-white font-semibold flex items-center gap-1.5">
+            Solicitações
+            {pendentes > 0 && (
+              <span
+                className="text-xs rounded-full px-1.5 min-w-5 text-center font-bold"
+                style={{ background: "#c2a360", color: "#072a3c" }}
+                title={`${pendentes} aguardando análise`}
+              >
+                {pendentes}
+              </span>
+            )}
+          </Link>
+          <Link href="/admin/gestores" className="text-white/90 hover:text-white font-semibold">
+            Gestores
           </Link>
           <Link href="/" target="_blank" className="text-white/90 hover:text-white font-semibold">
             Ver painel público ↗

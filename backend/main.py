@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -57,7 +57,19 @@ MAX_BACKUPS = 60
 # gravação se o último tiver mais de 1h — assim um erro de operação no meio
 # do dia também tem ponto de volta, não só os deploys.
 AUTO_SNAPSHOT_INTERVAL_S = 3600
-_BACKUP_FILES = ["seguradoras.json", "lancamentos.json", "admin.json"]
+GESTORES_FILE = DATA_DIR / "gestores.json"
+SOLICITACOES_FILE = DATA_DIR / "solicitacoes.json"
+_DATA_FILES = ["seguradoras.json", "lancamentos.json", "gestores.json", "solicitacoes.json"]
+_BACKUP_FILES = _DATA_FILES + ["admin.json"]
+LOGOS_DIR = DATA_DIR / "logos"
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_TIPOS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/svg+xml": "svg"}
+
+# Lista de franqueados para o formulário de solicitação vem do Piaseg
+# Franqueados (só os nomes dos ativos), com cache para não depender dele a
+# cada acesso; se estiver fora do ar o formulário aceita digitação livre.
+FRANQUEADOS_API_URL = os.getenv("FRANQUEADOS_API_URL", "https://piaseg-franqueados-backend.onrender.com/franqueados")
+FRANQUEADOS_CACHE_S = 600
 
 ADMIN_PASSWORD_SEED = os.getenv("ADMIN_PASSWORD", "")
 
@@ -98,6 +110,8 @@ def _snapshot(prefix: str = "") -> str:
         source = DATA_DIR / filename
         if source.exists():
             shutil.copy2(source, snapshot_dir / filename)
+    if LOGOS_DIR.exists():
+        shutil.copytree(LOGOS_DIR, snapshot_dir / "logos", dirs_exist_ok=True)
     existing = sorted((p for p in BACKUPS_DIR.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
     for old in existing[:-MAX_BACKUPS]:
         shutil.rmtree(old, ignore_errors=True)
@@ -178,6 +192,26 @@ class AcaoOperador(BaseModel):
     motivo: str = ""
 
 
+class GestorIn(BaseModel):
+    nome: str
+    email: str = ""
+    ativo: bool = True
+
+
+class SolicitacaoIn(BaseModel):
+    seguradora_id: str
+    valor: float = Field(gt=0)
+    franqueado: str
+    gestor_id: str
+    observacao: str = ""
+
+
+class RespostaSolicitacao(BaseModel):
+    decisao: Literal["aprovar", "reprovar"]
+    resposta: str = ""
+    operador: str
+
+
 # ---------------------------------------------------------------------------
 # Cálculo de saldos
 # ---------------------------------------------------------------------------
@@ -185,6 +219,12 @@ class AcaoOperador(BaseModel):
 
 def _cents(valor: float) -> int:
     return int(round(valor * 100))
+
+
+def _logo_url(seguradora: dict) -> Optional[str]:
+    # ?v= muda a cada upload, para o navegador não mostrar a logo antiga do cache
+    logo = seguradora.get("logo")
+    return f'/logos/{logo["arquivo"]}?v={logo["versao"]}' if logo else None
 
 
 def _resumo(seguradora: dict, lancamentos: list[dict]) -> dict:
@@ -209,6 +249,7 @@ def _resumo(seguradora: dict, lancamentos: list[dict]) -> dict:
     return {
         "id": seguradora["id"],
         "nome": seguradora["nome"],
+        "logo_url": _logo_url(seguradora),
         "ativa": seguradora.get("ativa", True),
         "creditos": creditos / 100,
         "utilizado": utilizado / 100,
@@ -264,7 +305,7 @@ def painel():
     linhas = [_resumo(s, lancamentos) for s in seguradoras if s.get("ativa", True)]
     linhas.sort(key=lambda r: r["nome"].lower())
     publicas = [
-        {k: r[k] for k in ("id", "nome", "saldo", "reserva", "saldo_a_utilizar", "atualizado_em")}
+        {k: r[k] for k in ("id", "nome", "logo_url", "saldo", "reserva", "saldo_a_utilizar", "atualizado_em")}
         for r in linhas
     ]
     return {
@@ -353,6 +394,57 @@ def delete_seguradora(seg_id: str, _: None = Depends(require_admin)):
     return {"ok": True}
 
 
+@app.post("/admin/seguradoras/{seg_id}/logo")
+async def upload_logo(seg_id: str, arquivo: UploadFile = File(...), _: None = Depends(require_admin)):
+    ext = LOGO_TIPOS.get(arquivo.content_type or "")
+    if not ext:
+        raise HTTPException(400, "Formato não aceito. Use PNG, JPG, WEBP ou SVG.")
+    conteudo = await arquivo.read()
+    if len(conteudo) > LOGO_MAX_BYTES:
+        raise HTTPException(400, "A imagem pode ter no máximo 2 MB.")
+    with _lock:
+        seguradoras = _load(SEGURADORAS_FILE)
+        seg = _seguradora_or_404(seguradoras, seg_id)
+        LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+        nome_arquivo = f"{seg_id}.{ext}"
+        for antigo in LOGOS_DIR.glob(f"{seg_id}.*"):
+            if antigo.name != nome_arquivo:
+                antigo.unlink()
+        (LOGOS_DIR / nome_arquivo).write_bytes(conteudo)
+        seg["logo"] = {"arquivo": nome_arquivo, "versao": uuid.uuid4().hex[:8]}
+        _save(SEGURADORAS_FILE, seguradoras)
+    return {"logo_url": _logo_url(seg)}
+
+
+@app.delete("/admin/seguradoras/{seg_id}/logo")
+def remove_logo(seg_id: str, _: None = Depends(require_admin)):
+    with _lock:
+        seguradoras = _load(SEGURADORAS_FILE)
+        seg = _seguradora_or_404(seguradoras, seg_id)
+        seg.pop("logo", None)  # arquivo fica no disco (backups); só deixa de aparecer
+        _save(SEGURADORAS_FILE, seguradoras)
+    return {"ok": True}
+
+
+@app.get("/logos/{arquivo}")
+def get_logo(arquivo: str):
+    caminho = LOGOS_DIR / arquivo
+    if "/" in arquivo or ".." in arquivo or not caminho.is_file():
+        raise HTTPException(404, "Logo não encontrada")
+    ext = caminho.suffix.lstrip(".")
+    media = {v: k for k, v in LOGO_TIPOS.items()}.get(ext, "application/octet-stream")
+    return FileResponse(
+        caminho,
+        media_type=media,
+        headers={
+            "Cache-Control": "public, max-age=31536000",
+            # SVG pode carregar script: bloqueia qualquer execução se abrirem a URL direto
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @app.get("/admin/seguradoras/{seg_id}")
 def get_seguradora(seg_id: str, _: None = Depends(require_admin)):
     seguradoras = _load(SEGURADORAS_FILE)
@@ -438,6 +530,206 @@ def estornar_lancamento(lanc_id: str, body: AcaoOperador, _: None = Depends(requ
         lanc["updated_at"] = lanc["estornado_em"]
         _save(LANCAMENTOS_FILE, lancamentos)
     return _public_lancamento(lanc)
+
+
+# ---------------------------------------------------------------------------
+# Gestores (assessores comerciais que recebem as solicitações)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/gestores")
+def list_gestores_publico():
+    gestores = [g for g in _load(GESTORES_FILE) if g.get("ativo", True)]
+    gestores.sort(key=lambda g: g["nome"].lower())
+    return [{"id": g["id"], "nome": g["nome"]} for g in gestores]
+
+
+@app.get("/admin/gestores")
+def list_gestores(_: None = Depends(require_admin)):
+    gestores = _load(GESTORES_FILE)
+    gestores.sort(key=lambda g: (not g.get("ativo", True), g["nome"].lower()))
+    return gestores
+
+
+@app.post("/admin/gestores", status_code=201)
+def create_gestor(body: GestorIn, _: None = Depends(require_admin)):
+    nome = body.nome.strip()
+    if not nome:
+        raise HTTPException(400, "Informe o nome do gestor")
+    with _lock:
+        gestores = _load(GESTORES_FILE)
+        if any(g["nome"].strip().lower() == nome.lower() for g in gestores):
+            raise HTTPException(409, "Já existe um gestor com esse nome")
+        g = {"id": uuid.uuid4().hex[:10], "nome": nome, "email": body.email.strip(), "ativo": body.ativo, "created_at": now_iso()}
+        gestores.append(g)
+        _save(GESTORES_FILE, gestores)
+    return g
+
+
+@app.put("/admin/gestores/{gestor_id}")
+def update_gestor(gestor_id: str, body: GestorIn, _: None = Depends(require_admin)):
+    nome = body.nome.strip()
+    if not nome:
+        raise HTTPException(400, "Informe o nome do gestor")
+    with _lock:
+        gestores = _load(GESTORES_FILE)
+        g = next((x for x in gestores if x["id"] == gestor_id), None)
+        if not g:
+            raise HTTPException(404, "Gestor não encontrado")
+        g.update({"nome": nome, "email": body.email.strip(), "ativo": body.ativo})
+        _save(GESTORES_FILE, gestores)
+    return g
+
+
+@app.delete("/admin/gestores/{gestor_id}")
+def delete_gestor(gestor_id: str, _: None = Depends(require_admin)):
+    with _lock:
+        if any(s["gestor_id"] == gestor_id for s in _load(SOLICITACOES_FILE)):
+            raise HTTPException(409, "Esse gestor já recebeu solicitações. Desative em vez de excluir.")
+        gestores = _load(GESTORES_FILE)
+        if not any(g["id"] == gestor_id for g in gestores):
+            raise HTTPException(404, "Gestor não encontrado")
+        _save(GESTORES_FILE, [g for g in gestores if g["id"] != gestor_id])
+    return {"ok": True}
+
+
+_franq_cache: dict = {"em": 0.0, "nomes": []}
+
+
+@app.get("/franqueados-lista")
+def franqueados_lista():
+    import urllib.request
+
+    agora = datetime.now(timezone.utc).timestamp()
+    if agora - _franq_cache["em"] > FRANQUEADOS_CACHE_S or not _franq_cache["nomes"]:
+        try:
+            with urllib.request.urlopen(FRANQUEADOS_API_URL, timeout=8) as r:
+                dados = json.loads(r.read().decode("utf-8"))
+            nomes = sorted(
+                {(f.get("nome_fantasia") or "").strip() for f in dados if f.get("status", "ativo") == "ativo"} - {""},
+                key=str.lower,
+            )
+            _franq_cache.update({"em": agora, "nomes": nomes})
+        except Exception as e:  # fora do ar: devolve o último cache (ou vazio)
+            print(f"[franqueados] falha ao buscar lista: {e}")
+    return _franq_cache["nomes"]
+
+
+# ---------------------------------------------------------------------------
+# Solicitações de reserva (franqueado pede → gestor aprova ou não)
+# ---------------------------------------------------------------------------
+
+SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada"}
+
+
+def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], lancamentos: list[dict]) -> dict:
+    seg = next((x for x in seguradoras if x["id"] == s["seguradora_id"]), None)
+    gest = next((x for x in gestores if x["id"] == s["gestor_id"]), None)
+    out = {k: v for k, v in s.items() if k != "valor_centavos"}
+    out["valor"] = s["valor_centavos"] / 100
+    out["seguradora_nome"] = seg["nome"] if seg else "?"
+    out["gestor_nome"] = gest["nome"] if gest else "?"
+    if s.get("lancamento_id"):
+        lanc = next((l for l in lancamentos if l["id"] == s["lancamento_id"]), None)
+        if lanc:
+            out["reserva_status"] = "estornada" if lanc.get("estornado") else lanc.get("status")
+    return out
+
+
+@app.post("/solicitacoes", status_code=201)
+def create_solicitacao(body: SolicitacaoIn):
+    franqueado = body.franqueado.strip()
+    if not franqueado:
+        raise HTTPException(400, "Informe o franqueado")
+    with _lock:
+        seguradoras = _load(SEGURADORAS_FILE)
+        seg = next((s for s in seguradoras if s["id"] == body.seguradora_id and s.get("ativa", True)), None)
+        if not seg:
+            raise HTTPException(400, "Seguradora inválida")
+        gestores = _load(GESTORES_FILE)
+        if not any(g["id"] == body.gestor_id and g.get("ativo", True) for g in gestores):
+            raise HTTPException(400, "Selecione o gestor que vai analisar a solicitação")
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = {
+            # id longo e aleatório: é ele que dá acesso à página de acompanhamento
+            "id": uuid.uuid4().hex,
+            "numero": max((x["numero"] for x in solicitacoes), default=0) + 1,
+            "seguradora_id": seg["id"],
+            "valor_centavos": _cents(body.valor),
+            "franqueado": franqueado,
+            "gestor_id": body.gestor_id,
+            "observacao": body.observacao.strip(),
+            "status": "pendente",
+            "created_at": now_iso(),
+        }
+        solicitacoes.append(s)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, seguradoras, gestores, [])
+
+
+@app.get("/solicitacoes/{sol_id}")
+def get_solicitacao(sol_id: str):
+    s = next((x for x in _load(SOLICITACOES_FILE) if x["id"] == sol_id), None)
+    if not s:
+        raise HTTPException(404, "Solicitação não encontrada")
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
+@app.get("/admin/solicitacoes")
+def list_solicitacoes(_: None = Depends(require_admin)):
+    seguradoras, gestores, lancamentos = _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE)
+    saldos = {s["id"]: _resumo(s, lancamentos)["saldo_a_utilizar"] for s in seguradoras}
+    out = []
+    for s in sorted(_load(SOLICITACOES_FILE), key=lambda x: x["numero"], reverse=True):
+        v = _solicitacao_view(s, seguradoras, gestores, lancamentos)
+        v["saldo_a_utilizar_atual"] = saldos.get(s["seguradora_id"], 0)
+        out.append(v)
+    return out
+
+
+@app.post("/admin/solicitacoes/{sol_id}/responder")
+def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depends(require_admin)):
+    operador = _operador(body.operador)
+    resposta = body.resposta.strip()
+    if body.decisao == "reprovar" and not resposta:
+        raise HTTPException(400, "Informe a justificativa para o franqueado")
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        if s["status"] != "pendente":
+            raise HTTPException(400, "Essa solicitação já foi respondida")
+        agora = now_iso()
+        if body.decisao == "aprovar":
+            # aprovação já cria a reserva na conta corrente da seguradora
+            lancamentos = _load(LANCAMENTOS_FILE)
+            descricao = f'Solicitação #{s["numero"]}'
+            if s.get("observacao"):
+                descricao += f' — {s["observacao"]}'
+            lanc = {
+                "id": uuid.uuid4().hex[:12],
+                "seguradora_id": s["seguradora_id"],
+                "tipo": "reserva",
+                "status": "aberta",
+                "valor_centavos": s["valor_centavos"],
+                "descricao": descricao,
+                "franqueado": s["franqueado"],
+                "data": datetime.now(timezone.utc).date().isoformat(),
+                "operador": operador,
+                "created_at": agora,
+                "estornado": False,
+                "solicitacao_id": s["id"],
+            }
+            lancamentos.append(lanc)
+            _save(LANCAMENTOS_FILE, lancamentos)
+            s["lancamento_id"] = lanc["id"]
+        s["status"] = "aprovada" if body.decisao == "aprovar" else "reprovada"
+        s["resposta"] = resposta
+        s["respondido_por"] = operador
+        s["respondido_em"] = agora
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
 
 
 TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
@@ -535,8 +827,10 @@ def restore_backup(name: str, _: None = Depends(require_admin)):
         raise HTTPException(404, "Backup não encontrado")
     with _lock:
         seguranca = _snapshot("antes-restore-")  # restore errado também tem volta
-        for filename in ("seguradoras.json", "lancamentos.json"):
+        for filename in _DATA_FILES:
             src = snapshot_dir / filename
             if src.exists():
                 shutil.copy2(src, DATA_DIR / filename)
+        if (snapshot_dir / "logos").is_dir():
+            shutil.copytree(snapshot_dir / "logos", LOGOS_DIR, dirs_exist_ok=True)
     return {"ok": True, "backup_seguranca": seguranca}
