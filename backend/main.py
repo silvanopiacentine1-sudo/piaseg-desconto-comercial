@@ -688,6 +688,8 @@ def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(req
         "especiais": _especiais(seg, lancamentos, solicitacoes, mes),
         # todos os produtos especiais já usados nesta seguradora (para sugerir no formulário)
         "categorias": sorted({_cat(l) for l in lancamentos if l["seguradora_id"] == seg_id and _cat(l)}, key=str.lower),
+        # produtos especiais usados em qualquer seguradora (sugestão ao criar um novo: Empresarial, Condomínio...)
+        "categorias_todas": sorted({_cat(l) for l in lancamentos if _cat(l)}, key=str.lower),
         "lancamentos": extrato,
     }
 

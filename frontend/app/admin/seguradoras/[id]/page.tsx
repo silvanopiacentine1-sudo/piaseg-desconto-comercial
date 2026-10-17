@@ -62,6 +62,9 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
   // verba do lançamento: "" = geral; NOVO = digitar um novo desconto especial
   const [verba, setVerba] = useState("");
   const [novaCategoria, setNovaCategoria] = useState("");
+  const [categoriasTodas, setCategoriasTodas] = useState<string[]>([]);
+  // no crédito, o gestor pode lançar várias verbas de uma vez (geral + Empresarial + Condomínio...)
+  const [extras, setExtras] = useState<{ verba: string; nova: string; valor: string }[]>([]);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
 
@@ -89,11 +92,18 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
 
   const carregar = useCallback(async () => {
     try {
-      const r = await apiJson<{ resumo: Resumo; especiais: Especial[]; categorias: string[]; lancamentos: Lancamento[] }>(
+      const r = await apiJson<{
+        resumo: Resumo;
+        especiais: Especial[];
+        categorias: string[];
+        categorias_todas: string[];
+        lancamentos: Lancamento[];
+      }>(
         `/admin/seguradoras/${id}?mes=${mes}`,
       );
       setEspeciais(r.especiais);
       setCategorias(r.categorias);
+      setCategoriasTodas(r.categorias_todas ?? []);
       setResumo(r.resumo);
       setLancs(r.lancamentos);
       setEditNome((atual) => atual || r.resumo.nome); // não apaga o que está sendo digitado
@@ -149,20 +159,50 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       setErro("Selecione o gestor no campo \"Lançado por\".");
       return;
     }
+    // linhas adicionais (só no crédito): cada uma vira um lançamento na sua verba
+    const linhas = [{ categoria, valor: v }];
+    if (tipo === "credito") {
+      for (const x of extras) {
+        const c = x.verba === NOVO ? x.nova.trim() : x.verba;
+        const vx = parseValor(x.valor);
+        if (x.verba === NOVO && !c) {
+          setErro("Informe o nome do produto em todas as linhas de desconto especial.");
+          return;
+        }
+        if (!Number.isFinite(vx) || vx <= 0) {
+          setErro(`Informe um valor válido para ${c ? `"${c}"` : "a verba geral"}.`);
+          return;
+        }
+        linhas.push({ categoria: c, valor: vx });
+      }
+      const nomes = linhas.map((l) => l.categoria.toLowerCase());
+      if (new Set(nomes).size !== nomes.length) {
+        setErro("Há duas linhas para a mesma verba. Junte os valores numa linha só.");
+        return;
+      }
+    }
     setSalvando(true);
     try {
-      await apiJson(`/admin/seguradoras/${id}/lancamentos`, {
-        method: "POST",
-        body: JSON.stringify({ tipo, valor: v, data, franqueado, descricao, operador, categoria }),
-      });
+      for (const l of linhas) {
+        await apiJson(`/admin/seguradoras/${id}/lancamentos`, {
+          method: "POST",
+          body: JSON.stringify({ tipo, valor: l.valor, data, franqueado, descricao, operador, categoria: l.categoria }),
+        });
+      }
+      setExtras([]);
       setValor("");
       setFranqueado("");
       setDescricao("");
       setVerba("");
       setNovaCategoria("");
+      const quando = formatDateTime(new Date().toISOString());
       setAviso(
-        `${TIPO_LABEL[tipo]} de ${formatBRL(v)} lançado por ${operador} em ${formatDateTime(new Date().toISOString())}. ` +
-          "O painel dos franqueados já foi atualizado.",
+        linhas.length > 1
+          ? `${linhas.length} créditos lançados por ${operador} em ${quando}: ` +
+              linhas.map((l) => `${l.categoria || "Verba geral"} ${formatBRL(l.valor)}`).join(" · ") +
+              ". O painel dos franqueados já foi atualizado."
+          : `${TIPO_LABEL[tipo]} de ${formatBRL(v)} lançado por ${operador} em ${quando}. ` +
+              "O painel dos franqueados já foi atualizado.",
       );
       await carregar();
     } catch (e) {
@@ -382,6 +422,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                     onClick={() => {
                       setTipo(t);
                       if (t !== "credito" && verba === NOVO) setVerba(""); // novo especial só nasce de um crédito
+                      if (t !== "credito") setExtras([]);
                     }}
                     className="rounded-md py-2 text-sm font-semibold cursor-pointer"
                     style={
@@ -412,6 +453,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                   <input
                     value={novaCategoria}
                     onChange={(e) => setNovaCategoria(e.target.value)}
+                    list="produtos-especiais"
                     placeholder="Produto do desconto especial (ex.: Máquinas agrícolas)"
                     maxLength={60}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2"
@@ -447,6 +489,75 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                   />
                 </div>
               </div>
+              {tipo === "credito" && (
+                <div className="flex flex-col gap-2">
+                  {extras.map((x, k) => (
+                    <div
+                      key={k}
+                      className="rounded-lg p-3 flex flex-col gap-2"
+                      style={{ background: ESPECIAL_COR.fundo, border: `1px solid #fed7aa` }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold" style={{ color: ESPECIAL_COR.cor }}>
+                          Verba adicional {k + 2}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setExtras(extras.filter((_, n) => n !== k))}
+                          className="text-xs text-red-600 hover:underline cursor-pointer"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                      <select
+                        value={x.verba}
+                        onChange={(e) => setExtras(extras.map((y, n) => (n === k ? { ...y, verba: e.target.value } : y)))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm"
+                      >
+                        <option value="">Verba geral</option>
+                        {categorias.map((c) => (
+                          <option key={c} value={c}>
+                            ★ Desconto especial: {c}
+                          </option>
+                        ))}
+                        <option value={NOVO}>★ Novo desconto especial...</option>
+                      </select>
+                      {x.verba === NOVO && (
+                        <input
+                          value={x.nova}
+                          onChange={(e) => setExtras(extras.map((y, n) => (n === k ? { ...y, nova: e.target.value } : y)))}
+                          list="produtos-especiais"
+                          placeholder="Produto (ex.: Empresarial, Condomínio)"
+                          maxLength={60}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm"
+                          required
+                        />
+                      )}
+                      <input
+                        value={x.valor}
+                        onChange={(e) => setExtras(extras.map((y, n) => (n === k ? { ...y, valor: e.target.value } : y)))}
+                        inputMode="decimal"
+                        placeholder="Valor (R$)"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm"
+                        required
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setExtras([...extras, { verba: NOVO, nova: "", valor: "" }])}
+                    className="text-sm font-semibold rounded-lg py-2 border border-dashed cursor-pointer"
+                    style={{ color: ESPECIAL_COR.cor, borderColor: "#fdba74" }}
+                  >
+                    + Adicionar outra verba (ex.: Empresarial, Condomínio)
+                  </button>
+                  <datalist id="produtos-especiais">
+                    {categoriasTodas.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+              )}
               {tipo !== "credito" && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Franqueado</label>
@@ -496,7 +607,11 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 className="rounded-lg py-2.5 font-semibold text-white cursor-pointer disabled:opacity-60"
                 style={{ background: TIPO_INFO[tipo].cor }}
               >
-                {salvando ? "Lançando..." : `Lançar ${TIPO_LABEL[tipo].toLowerCase()}`}
+                {salvando
+                  ? "Lançando..."
+                  : tipo === "credito" && extras.length > 0
+                    ? `Lançar ${extras.length + 1} créditos`
+                    : `Lançar ${TIPO_LABEL[tipo].toLowerCase()}`}
               </button>
             </form>
 
