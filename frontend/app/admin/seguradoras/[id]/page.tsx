@@ -5,6 +5,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "../../../components/Header";
 import Logo from "../../../components/Logo";
+import SeletorMes from "../../../components/SeletorMes";
+import { useMesAdmin } from "../../../lib/mesAdmin";
 import { apiJson } from "../../../lib/api";
 import { enviarLogo } from "../../../lib/logo";
 import { getOperador, isAdminLoggedIn } from "../../../lib/auth";
@@ -14,6 +16,7 @@ import {
   formatBRL,
   formatDate,
   formatDateTime,
+  formatMes,
   hojeISO,
   parseValor,
   type Lancamento,
@@ -63,16 +66,18 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
   const [editando, setEditando] = useState(false);
   const [mostrarEstornados, setMostrarEstornados] = useState(true);
 
+  const [mes, setMes, meses] = useMesAdmin();
+
   const carregar = useCallback(async () => {
     try {
-      const r = await apiJson<{ resumo: Resumo; lancamentos: Lancamento[] }>(`/admin/seguradoras/${id}`);
+      const r = await apiJson<{ resumo: Resumo; lancamentos: Lancamento[] }>(`/admin/seguradoras/${id}?mes=${mes}`);
       setResumo(r.resumo);
       setLancs(r.lancamentos);
       setEditNome(r.resumo.nome);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
-  }, [id]);
+  }, [id, mes]);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {
@@ -266,6 +271,13 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               )}
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <p className="text-sm text-gray-500">
+                Valores de <strong>{formatMes(mes)}</strong>
+                {resumo.em_analise > 0 && ` · a reserva inclui ${formatBRL(resumo.em_analise)} de solicitações em análise`}
+              </p>
+              <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
+            </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               <Card label="Saldo" v={resumo.saldo} />
               <Card label="Reserva" v={resumo.reserva} />

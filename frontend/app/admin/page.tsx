@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { enviarLogo } from "../lib/logo";
 import Header from "../components/Header";
 import Logo from "../components/Logo";
+import SeletorMes from "../components/SeletorMes";
+import { useMesAdmin } from "../lib/mesAdmin";
 import { apiJson, downloadFile } from "../lib/api";
 import { isAdminLoggedIn } from "../lib/auth";
 import { formatBRL, hojeISO, type Resumo } from "../lib/types";
@@ -18,14 +20,15 @@ export default function AdminPage() {
   const [salvando, setSalvando] = useState(false);
   const [logo, setLogo] = useState<File | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
+  const [mes, setMes, meses] = useMesAdmin();
 
   const carregar = useCallback(async () => {
     try {
-      setLinhas(await apiJson<Resumo[]>("/admin/seguradoras"));
+      setLinhas(await apiJson<Resumo[]>(`/admin/seguradoras?mes=${mes}`));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
-  }, []);
+  }, [mes]);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {
@@ -65,6 +68,7 @@ export default function AdminPage() {
           <h1 className="font-heading text-2xl" style={{ color: "#072a3c" }}>
             Seguradoras
           </h1>
+          <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
           <button
             onClick={() => downloadFile("/admin/export", `desconto-comercial-${hojeISO()}.xlsx`).catch((e) => setErro(e.message))}
             className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer border"

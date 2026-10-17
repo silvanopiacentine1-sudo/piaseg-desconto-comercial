@@ -3,7 +3,7 @@ import os
 import shutil
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Literal, Optional
@@ -227,11 +227,55 @@ def _logo_url(seguradora: dict) -> Optional[str]:
     return f'/logos/{logo["arquivo"]}?v={logo["versao"]}' if logo else None
 
 
-def _resumo(seguradora: dict, lancamentos: list[dict]) -> dict:
-    creditos = utilizado = reservado = 0
+SP_TZ = timezone(timedelta(hours=-3))  # America/Sao_Paulo (sem horário de verão)
+
+
+def _hoje_sp() -> str:
+    return datetime.now(SP_TZ).date().isoformat()
+
+
+def _data_sp(iso: str) -> str:
+    return datetime.fromisoformat(iso).astimezone(SP_TZ).date().isoformat()
+
+
+def _sol_data(s: dict) -> str:
+    return s.get("data") or _data_sp(s["created_at"])
+
+
+def _no_mes(data: str, mes: Optional[str]) -> bool:
+    # A verba é mensal: começa e termina no mesmo mês. mes=None = todo o período.
+    return mes is None or data[:7] == mes
+
+
+def _validar_mes(mes: Optional[str]) -> Optional[str]:
+    if not mes or mes == "todos":
+        return None
+    try:
+        datetime.strptime(mes, "%Y-%m")
+    except ValueError:
+        raise HTTPException(400, "Mês inválido (use AAAA-MM)")
+    return mes
+
+
+def _meses_disponiveis(lancamentos: list[dict], solicitacoes: list[dict]) -> list[str]:
+    meses = {_hoje_sp()[:7]}
+    meses |= {l["data"][:7] for l in lancamentos}
+    meses |= {_sol_data(s)[:7] for s in solicitacoes}
+    return sorted(meses, reverse=True)
+
+
+def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] = (), mes: Optional[str] = None) -> dict:
+    """Saldo = créditos − utilizado; Reserva = reservas em aberto + solicitações
+    em análise (já seguram o valor, como numa conta corrente); Saldo à
+    utilizar = Saldo − Reserva. Tudo dentro do mês informado."""
+    creditos = utilizado = reservado = em_analise = 0
     ultimo = None
+    for s in solicitacoes:
+        if s["seguradora_id"] == seguradora["id"] and s["status"] == "pendente" and _no_mes(_sol_data(s), mes):
+            em_analise += s["valor_centavos"]
+            ultimo = max(ultimo or "", s["created_at"])
     for l in lancamentos:
-        if l["seguradora_id"] != seguradora["id"]:
+        if l["seguradora_id"] != seguradora["id"] or not _no_mes(l["data"], mes):
             continue
         ultimo = max(ultimo or "", l.get("updated_at") or l["created_at"])
         if l.get("estornado"):
@@ -246,6 +290,7 @@ def _resumo(seguradora: dict, lancamentos: list[dict]) -> dict:
             elif l.get("status") == "utilizada":
                 utilizado += l["valor_centavos"]
     saldo = creditos - utilizado
+    reservado += em_analise
     return {
         "id": seguradora["id"],
         "nome": seguradora["nome"],
@@ -255,6 +300,7 @@ def _resumo(seguradora: dict, lancamentos: list[dict]) -> dict:
         "utilizado": utilizado / 100,
         "saldo": saldo / 100,
         "reserva": reservado / 100,
+        "em_analise": em_analise / 100,
         "saldo_a_utilizar": (saldo - reservado) / 100,
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
@@ -297,25 +343,102 @@ def health():
     return {"ok": True}
 
 
+_CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "saldo_a_utilizar", "atualizado_em")
+
+
 @app.get("/painel")
-def painel():
-    """Painel aberto aos franqueados: só os números por seguradora ativa."""
+def painel(mes: Optional[str] = None):
+    """Painel aberto aos franqueados: números por seguradora ativa no mês
+    (padrão = mês atual; mes=todos = período inteiro)."""
+    mes_param = mes
+    mes = _validar_mes(mes) if mes_param else _hoje_sp()[:7]
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos = _load(LANCAMENTOS_FILE)
-    linhas = [_resumo(s, lancamentos) for s in seguradoras if s.get("ativa", True)]
+    solicitacoes = _load(SOLICITACOES_FILE)
+    linhas = [_resumo(s, lancamentos, solicitacoes, mes) for s in seguradoras if s.get("ativa", True)]
     linhas.sort(key=lambda r: r["nome"].lower())
-    publicas = [
-        {k: r[k] for k in ("id", "nome", "logo_url", "saldo", "reserva", "saldo_a_utilizar", "atualizado_em")}
-        for r in linhas
-    ]
     return {
-        "seguradoras": publicas,
+        "mes": mes or "todos",
+        "meses": _meses_disponiveis(lancamentos, solicitacoes),
+        "seguradoras": [{k: r[k] for k in _CAMPOS_PUBLICOS} for r in linhas],
         "totais": {
             "saldo": round(sum(r["saldo"] for r in linhas), 2),
             "reserva": round(sum(r["reserva"] for r in linhas), 2),
             "saldo_a_utilizar": round(sum(r["saldo_a_utilizar"] for r in linhas), 2),
         },
         "atualizado_em": max((r["atualizado_em"] or "" for r in linhas), default=None) or None,
+    }
+
+
+def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], gestores: list[dict], mes: Optional[str]) -> list[dict]:
+    """Extrato público tipo conta corrente: créditos, usos e solicitações, com
+    o efeito de cada um no saldo à utilizar e o saldo após cada movimento.
+    Lançamentos estornados não aparecem; reservas criadas por aprovação de
+    solicitação aparecem pela própria solicitação (com resposta do gestor)."""
+    lanc_por_id = {l["id"]: l for l in lancamentos}
+    nomes_gest = {g["id"]: g["nome"] for g in gestores}
+    itens = []
+    for l in lancamentos:
+        if l["seguradora_id"] != seg_id or l.get("estornado") or l.get("solicitacao_id") or not _no_mes(l["data"], mes):
+            continue
+        v = l["valor_centavos"]
+        if l["tipo"] == "credito":
+            situacao, efeito = "credito", v
+        elif l["tipo"] == "utilizacao":
+            situacao, efeito = "utilizada", -v
+        else:
+            situacao = {"aberta": "reservada", "utilizada": "utilizada", "cancelada": "cancelada"}[l["status"]]
+            efeito = 0 if situacao == "cancelada" else -v
+        itens.append({
+            "id": l["id"], "origem": "lancamento", "tipo": l["tipo"], "situacao": situacao,
+            "data": l["data"], "ordem": l["created_at"], "valor": v / 100, "efeito_c": efeito,
+            "franqueado": l.get("franqueado", ""), "descricao": l.get("descricao", ""),
+        })
+    for s in solicitacoes:
+        if s["seguradora_id"] != seg_id or not _no_mes(_sol_data(s), mes):
+            continue
+        v = s["valor_centavos"]
+        if s["status"] == "pendente":
+            situacao, efeito = "em_analise", -v
+        elif s["status"] == "reprovada":
+            situacao, efeito = "reprovada", 0
+        else:
+            lanc = lanc_por_id.get(s.get("lancamento_id") or "")
+            st = "estornada" if (lanc and lanc.get("estornado")) else (lanc or {}).get("status", "aberta")
+            situacao = {"aberta": "aprovada", "utilizada": "aprovada_utilizada", "cancelada": "cancelada", "estornada": "cancelada"}[st]
+            efeito = 0 if situacao == "cancelada" else -v
+        itens.append({
+            "id": s["id"], "origem": "solicitacao", "tipo": "solicitacao", "situacao": situacao, "numero": s["numero"],
+            "data": _sol_data(s), "ordem": s["created_at"], "valor": v / 100, "efeito_c": efeito,
+            "franqueado": s["franqueado"], "observacao": s.get("observacao", ""),
+            "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
+            "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
+            "respondido_em": s.get("respondido_em"),
+        })
+    itens.sort(key=lambda i: (i["data"], i["ordem"]))
+    saldo = 0
+    for i in itens:
+        efeito = i.pop("efeito_c")
+        saldo += efeito
+        i["efeito"] = efeito / 100
+        i["saldo_apos"] = saldo / 100
+        del i["ordem"]
+    return list(reversed(itens))
+
+
+@app.get("/painel/{seg_id}")
+def painel_seguradora(seg_id: str, mes: Optional[str] = None):
+    mes = _validar_mes(mes) if mes else _hoje_sp()[:7]
+    seguradoras = _load(SEGURADORAS_FILE)
+    seg = next((s for s in seguradoras if s["id"] == seg_id and s.get("ativa", True)), None)
+    if not seg:
+        raise HTTPException(404, "Seguradora não encontrada")
+    lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
+    r = _resumo(seg, lancamentos, solicitacoes, mes)
+    return {
+        "mes": mes or "todos",
+        "resumo": {k: r[k] for k in _CAMPOS_PUBLICOS},
+        "movimentos": _movimentos(seg_id, lancamentos, solicitacoes, _load(GESTORES_FILE), mes),
     }
 
 
@@ -342,12 +465,18 @@ def trocar_senha(body: SenhaUpdate, _: None = Depends(require_admin)):
 
 
 @app.get("/admin/seguradoras")
-def list_seguradoras(_: None = Depends(require_admin)):
+def list_seguradoras(mes: Optional[str] = None, _: None = Depends(require_admin)):
+    mes = _validar_mes(mes)
     seguradoras = _load(SEGURADORAS_FILE)
-    lancamentos = _load(LANCAMENTOS_FILE)
-    linhas = [_resumo(s, lancamentos) for s in seguradoras]
+    lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
+    linhas = [_resumo(s, lancamentos, solicitacoes, mes) for s in seguradoras]
     linhas.sort(key=lambda r: (not r["ativa"], r["nome"].lower()))
     return linhas
+
+
+@app.get("/admin/meses")
+def meses_admin(_: None = Depends(require_admin)):
+    return _meses_disponiveis(_load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE))
 
 
 @app.post("/admin/seguradoras", status_code=201)
@@ -446,19 +575,22 @@ def get_logo(arquivo: str):
 
 
 @app.get("/admin/seguradoras/{seg_id}")
-def get_seguradora(seg_id: str, _: None = Depends(require_admin)):
+def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(require_admin)):
+    mes = _validar_mes(mes)
     seguradoras = _load(SEGURADORAS_FILE)
     seg = _seguradora_or_404(seguradoras, seg_id)
-    lancamentos = _load(LANCAMENTOS_FILE)
-    extrato = [_public_lancamento(l) for l in lancamentos if l["seguradora_id"] == seg_id]
+    lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
+    extrato = [
+        _public_lancamento(l) for l in lancamentos if l["seguradora_id"] == seg_id and _no_mes(l["data"], mes)
+    ]
     extrato.sort(key=lambda l: (l["data"], l["created_at"]), reverse=True)
-    return {"resumo": _resumo(seg, lancamentos), "lancamentos": extrato}
+    return {"resumo": _resumo(seg, lancamentos, solicitacoes, mes), "lancamentos": extrato}
 
 
 @app.post("/admin/seguradoras/{seg_id}/lancamentos", status_code=201)
 def create_lancamento(seg_id: str, body: LancamentoIn, _: None = Depends(require_admin)):
     operador = _operador(body.operador)
-    data = body.data or datetime.now(timezone.utc).date().isoformat()
+    data = body.data or _hoje_sp()
     try:
         datetime.strptime(data, "%Y-%m-%d")
     except ValueError:
@@ -660,6 +792,7 @@ def create_solicitacao(body: SolicitacaoIn):
             "gestor_id": body.gestor_id,
             "observacao": body.observacao.strip(),
             "status": "pendente",
+            "data": _hoje_sp(),
             "created_at": now_iso(),
         }
         solicitacoes.append(s)
@@ -678,11 +811,19 @@ def get_solicitacao(sol_id: str):
 @app.get("/admin/solicitacoes")
 def list_solicitacoes(_: None = Depends(require_admin)):
     seguradoras, gestores, lancamentos = _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE)
-    saldos = {s["id"]: _resumo(s, lancamentos)["saldo_a_utilizar"] for s in seguradoras}
+    solicitacoes = _load(SOLICITACOES_FILE)
+    segs = {s["id"]: s for s in seguradoras}
+    cache: dict = {}
     out = []
-    for s in sorted(_load(SOLICITACOES_FILE), key=lambda x: x["numero"], reverse=True):
+    for s in sorted(solicitacoes, key=lambda x: x["numero"], reverse=True):
         v = _solicitacao_view(s, seguradoras, gestores, lancamentos)
-        v["saldo_a_utilizar_atual"] = saldos.get(s["seguradora_id"], 0)
+        v["data"] = _sol_data(s)
+        if s["status"] == "pendente" and s["seguradora_id"] in segs:
+            # saldo do mês da solicitação, sem contar ela mesma (que já está "em análise")
+            chave = (s["seguradora_id"], v["data"][:7])
+            if chave not in cache:
+                cache[chave] = _resumo(segs[s["seguradora_id"]], lancamentos, solicitacoes, chave[1])["saldo_a_utilizar"]
+            v["saldo_a_utilizar_atual"] = round(cache[chave] + s["valor_centavos"] / 100, 2)
         out.append(v)
     return out
 
@@ -715,7 +856,7 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
                 "valor_centavos": s["valor_centavos"],
                 "descricao": descricao,
                 "franqueado": s["franqueado"],
-                "data": datetime.now(timezone.utc).date().isoformat(),
+                "data": _sol_data(s),  # reserva fica no mês da solicitação
                 "operador": operador,
                 "created_at": agora,
                 "estornado": False,
@@ -730,6 +871,126 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
         s["respondido_em"] = agora
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
+# ---------------------------------------------------------------------------
+# Relatório: uso de desconto por franqueado no mês
+# ---------------------------------------------------------------------------
+
+
+def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
+    seguradoras = _load(SEGURADORAS_FILE)
+    nomes_seg = {s["id"]: s["nome"] for s in seguradoras}
+    lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
+
+    def entra(seg_id: str, data: str) -> bool:
+        return (not seguradora_id or seg_id == seguradora_id) and _no_mes(data, mes)
+
+    verba = 0
+    por_franq: dict[str, dict] = {}
+
+    def linha(nome: str) -> dict:
+        nome = (nome or "").strip() or "(sem franqueado informado)"
+        chave = nome.lower()
+        if chave not in por_franq:
+            por_franq[chave] = {
+                "franqueado": nome, "utilizado": 0, "reservado": 0, "negocios": 0,
+                "solic_aprovadas": 0, "solic_reprovadas": 0, "solic_pendentes": 0, "por_seguradora": {},
+            }
+        return por_franq[chave]
+
+    for l in lancamentos:
+        if l.get("estornado") or not entra(l["seguradora_id"], l["data"]):
+            continue
+        v = l["valor_centavos"]
+        if l["tipo"] == "credito":
+            verba += v
+            continue
+        if l["tipo"] == "reserva" and l.get("status") == "cancelada":
+            continue
+        r = linha(l.get("franqueado", ""))
+        if l["tipo"] == "reserva" and l.get("status") == "aberta":
+            r["reservado"] += v
+        else:
+            r["utilizado"] += v
+        r["negocios"] += 1
+        seg_nome = nomes_seg.get(l["seguradora_id"], "?")
+        r["por_seguradora"][seg_nome] = r["por_seguradora"].get(seg_nome, 0) + v
+
+    for s in solicitacoes:
+        if not entra(s["seguradora_id"], _sol_data(s)):
+            continue
+        r = linha(s["franqueado"])
+        campo = {"aprovada": "solic_aprovadas", "reprovada": "solic_reprovadas", "pendente": "solic_pendentes"}[s["status"]]
+        r[campo] += 1
+
+    linhas = []
+    for r in por_franq.values():
+        total = r["utilizado"] + r["reservado"]
+        linhas.append({
+            **r,
+            "utilizado": r["utilizado"] / 100,
+            "reservado": r["reservado"] / 100,
+            "total": total / 100,
+            "percentual": round(total * 100 / verba, 1) if verba else None,
+            "por_seguradora": [
+                {"seguradora": k, "valor": v / 100} for k, v in sorted(r["por_seguradora"].items(), key=lambda x: -x[1])
+            ],
+        })
+    linhas.sort(key=lambda x: (-x["total"], x["franqueado"].lower()))
+    usado = sum(x["total"] for x in linhas)
+    return {
+        "mes": mes or "todos",
+        "seguradora_id": seguradora_id,
+        "verba_total": verba / 100,
+        "usado_total": round(usado, 2),
+        "percentual_usado": round(usado * 10000 / verba, 1) if verba else None,
+        "saldo_restante": round(verba / 100 - usado, 2),
+        "negocios_total": sum(x["negocios"] for x in linhas),
+        "franqueados": linhas,
+    }
+
+
+@app.get("/admin/relatorio")
+def relatorio(mes: Optional[str] = None, seguradora_id: Optional[str] = None, _: None = Depends(require_admin)):
+    return _relatorio(_validar_mes(mes) if mes else _hoje_sp()[:7], seguradora_id or None)
+
+
+@app.get("/admin/relatorio/export")
+def relatorio_export(mes: Optional[str] = None, seguradora_id: Optional[str] = None, _: None = Depends(require_admin)):
+    rel = _relatorio(_validar_mes(mes) if mes else _hoje_sp()[:7], seguradora_id or None)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Uso por franqueado"
+    seg_nome = next((s["nome"] for s in _load(SEGURADORAS_FILE) if s["id"] == seguradora_id), "Todas")
+    ws.append([f'Mês: {rel["mes"]} · Seguradora: {seg_nome} · Verba total: R$ {rel["verba_total"]:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".")])
+    ws.append([])
+    ws.append(["Franqueado", "Utilizado", "Reservado", "Total", "% da verba", "Nº de negócios",
+               "Solic. aprovadas", "Solic. não aprovadas", "Solic. em análise", "Por seguradora"])
+    for r in rel["franqueados"]:
+        ws.append([
+            r["franqueado"], r["utilizado"], r["reservado"], r["total"],
+            (r["percentual"] or 0) / 100, r["negocios"], r["solic_aprovadas"], r["solic_reprovadas"], r["solic_pendentes"],
+            "; ".join(f'{p["seguradora"]}: {p["valor"]:.2f}' for p in r["por_seguradora"]),
+        ])
+    brl = '"R$" #,##0.00;[Red]-"R$" #,##0.00'
+    for row in ws.iter_rows(min_row=4):
+        for c in row[1:4]:
+            c.number_format = brl
+        row[4].number_format = "0.0%"
+    for c in ws[3]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="072A3C")
+    for col, w in zip("ABCDEFGHIJ", (36, 14, 14, 14, 11, 14, 15, 18, 16, 50)):
+        ws.column_dimensions[col].width = w
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="relatorio-desconto-{rel["mes"]}.xlsx"'},
+    )
 
 
 TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
@@ -757,7 +1018,7 @@ def export_excel(_: None = Depends(require_admin)):
     ws = wb.active
     ws.title = "Saldos"
     ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Saldo à utilizar"])
-    for r in sorted((_resumo(s, lancamentos) for s in seguradoras), key=lambda r: r["nome"].lower()):
+    for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
         ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["saldo_a_utilizar"]])
     for row in ws.iter_rows(min_row=2, min_col=3, max_col=5):
         for c in row:

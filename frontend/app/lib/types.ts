@@ -10,6 +10,7 @@ export interface Resumo {
   utilizado: number;
   saldo: number;
   reserva: number;
+  em_analise: number;
   saldo_a_utilizar: number;
   atualizado_em: string | null;
 }
@@ -34,10 +35,69 @@ export interface Lancamento {
   status_motivo?: string;
 }
 
+export type ResumoPublico = Pick<
+  Resumo,
+  "id" | "nome" | "logo_url" | "saldo" | "reserva" | "em_analise" | "saldo_a_utilizar" | "atualizado_em"
+>;
+
 export interface PainelPublico {
-  seguradoras: Pick<Resumo, "id" | "nome" | "logo_url" | "saldo" | "reserva" | "saldo_a_utilizar" | "atualizado_em">[];
+  mes: string;
+  meses: string[];
+  seguradoras: ResumoPublico[];
   totais: { saldo: number; reserva: number; saldo_a_utilizar: number };
   atualizado_em: string | null;
+}
+
+export type SituacaoMov =
+  | "credito"
+  | "em_analise"
+  | "aprovada"
+  | "aprovada_utilizada"
+  | "reprovada"
+  | "reservada"
+  | "utilizada"
+  | "cancelada";
+
+export interface Movimento {
+  id: string;
+  origem: "lancamento" | "solicitacao";
+  tipo: string;
+  situacao: SituacaoMov;
+  numero?: number;
+  data: string;
+  valor: number;
+  efeito: number;
+  saldo_apos: number;
+  franqueado: string;
+  descricao?: string;
+  observacao?: string;
+  gestor_nome?: string;
+  resposta?: string;
+  respondido_por?: string;
+  respondido_em?: string | null;
+}
+
+export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
+  credito: { label: "Crédito de verba", cor: "#072a3c", fundo: "#e6edf1" },
+  em_analise: { label: "Em análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
+  aprovada: { label: "Aprovada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  aprovada_utilizada: { label: "Aprovada · utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  reservada: { label: "Reservada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  utilizada: { label: "Utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
+  cancelada: { label: "Cancelada", cor: "#6b7280", fundo: "#f1f1f1" },
+};
+
+const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+export function formatMes(mes: string): string {
+  if (mes === "todos") return "Todos os meses";
+  const [y, m] = mes.split("-");
+  return `${MESES_PT[Number(m) - 1]}/${y}`;
+}
+
+export function mesAtual(): string {
+  return hojeISO().slice(0, 7);
 }
 
 export interface Gestor {

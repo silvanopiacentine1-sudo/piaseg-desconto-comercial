@@ -1,11 +1,106 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Logo from "./components/Logo";
+import SeletorMes from "./components/SeletorMes";
 import { API } from "./lib/api";
 import { getMinhas } from "./lib/minhas";
-import { SOLIC_STATUS, formatBRL, formatDateTime, type PainelPublico, type Solicitacao } from "./lib/types";
+import {
+  SITUACAO,
+  SOLIC_STATUS,
+  formatBRL,
+  formatDate,
+  formatDateTime,
+  formatMes,
+  mesAtual,
+  type Movimento,
+  type PainelPublico,
+  type ResumoPublico,
+  type Solicitacao,
+} from "./lib/types";
+
+const SEG_KEY = "desconto_seguradora_escolhida";
+
+function Valor({ v, destaque = false }: { v: number; destaque?: boolean }) {
+  return (
+    <span
+      className={`tabular-nums whitespace-nowrap ${destaque ? "font-bold" : ""}`}
+      style={{ color: v < 0 ? "#b42318" : destaque ? "#072a3c" : undefined }}
+    >
+      {formatBRL(v)}
+    </span>
+  );
+}
+
+function Badge({ situacao }: { situacao: Movimento["situacao"] }) {
+  const s = SITUACAO[situacao];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap"
+      style={{ color: s.cor, background: s.fundo }}
+    >
+      <span className="w-2 h-2 rounded-full" style={{ background: s.cor }} aria-hidden />
+      {s.label}
+    </span>
+  );
+}
+
+function LinhaMovimento({ m }: { m: Movimento }) {
+  const s = SITUACAO[m.situacao];
+  const titulo =
+    m.situacao === "credito"
+      ? m.descricao || "Crédito de verba da seguradora"
+      : m.franqueado || "Franqueado não informado";
+  const semEfeito = m.efeito === 0;
+  return (
+    <li className="py-4 flex flex-col gap-2" style={{ borderLeft: `4px solid ${s.cor}`, paddingLeft: 12 }}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <p className="font-semibold" style={{ color: "#072a3c" }}>
+            {titulo}
+          </p>
+          <p className="text-xs text-gray-500">
+            {formatDate(m.data)}
+            {m.numero && ` · Solicitação #${m.numero}`}
+            {m.gestor_nome && ` · para ${m.gestor_nome}`}
+            {m.origem === "lancamento" && m.situacao !== "credito" && m.descricao && ` · ${m.descricao}`}
+          </p>
+        </div>
+        <div className="sm:text-right">
+          <p
+            className={`font-bold tabular-nums whitespace-nowrap ${semEfeito ? "line-through text-gray-400" : ""}`}
+            style={semEfeito ? undefined : { color: m.efeito > 0 ? "#1f7a4d" : "#072a3c" }}
+          >
+            {m.efeito > 0 ? "+ " : semEfeito ? "" : "− "}
+            {formatBRL(m.valor)}
+          </p>
+          <p className="text-xs text-gray-500 whitespace-nowrap">
+            Saldo: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
+          </p>
+        </div>
+      </div>
+      <div>
+        <Badge situacao={m.situacao} />
+      </div>
+      {m.observacao && (
+        <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: "#f6f6f6" }}>
+          <span className="block text-xs uppercase tracking-wider text-gray-500">Justificativa do franqueado</span>
+          {m.observacao}
+        </p>
+      )}
+      {m.origem === "solicitacao" && m.situacao !== "em_analise" && (m.resposta || m.respondido_por) && (
+        <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: s.fundo }}>
+          <span className="block text-xs uppercase tracking-wider" style={{ color: s.cor }}>
+            Resposta de {m.respondido_por}
+            {m.respondido_em && ` · ${formatDateTime(m.respondido_em)}`}
+          </span>
+          {m.resposta || "—"}
+        </p>
+      )}
+    </li>
+  );
+}
 
 function MinhasSolicitacoes() {
   const [itens, setItens] = useState<Solicitacao[]>([]);
@@ -53,50 +148,65 @@ function MinhasSolicitacoes() {
   );
 }
 
-function Valor({ v, destaque = false }: { v: number; destaque?: boolean }) {
-  const negativo = v < 0;
-  return (
-    <span
-      className={`tabular-nums whitespace-nowrap ${destaque ? "font-bold" : ""}`}
-      style={{ color: negativo ? "#b42318" : destaque ? "#072a3c" : undefined }}
-    >
-      {formatBRL(v)}
-    </span>
-  );
-}
-
 export default function PainelPage() {
-  const [dados, setDados] = useState<PainelPublico | null>(null);
+  const [mes, setMes] = useState(mesAtual());
+  const [painel, setPainel] = useState<PainelPublico | null>(null);
+  const [segId, setSegId] = useState("");
+  const [detalhe, setDetalhe] = useState<{ resumo: ResumoPublico; movimentos: Movimento[] } | null>(null);
   const [erro, setErro] = useState("");
-  const [busca, setBusca] = useState("");
+
+  const carregarPainel = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/painel?mes=${mes}`, { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      const p: PainelPublico = await res.json();
+      setPainel(p);
+      setErro("");
+      setSegId((atual) => {
+        if (atual && p.seguradoras.some((s) => s.id === atual)) return atual;
+        let lembrada = "";
+        try {
+          lembrada = localStorage.getItem(SEG_KEY) ?? "";
+        } catch {}
+        return p.seguradoras.some((s) => s.id === lembrada) ? lembrada : (p.seguradoras[0]?.id ?? "");
+      });
+    } catch {
+      setErro("Não foi possível carregar os saldos. Tente atualizar a página em instantes.");
+    }
+  }, [mes]);
+
+  const carregarDetalhe = useCallback(async () => {
+    if (!segId) {
+      setDetalhe(null);
+      return;
+    }
+    try {
+      const res = await fetch(`${API}/painel/${segId}?mes=${mes}`, { cache: "no-store" });
+      if (res.ok) setDetalhe(await res.json());
+    } catch {}
+  }, [segId, mes]);
 
   useEffect(() => {
-    let ativo = true;
-    async function carregar() {
-      try {
-        const res = await fetch(`${API}/painel`, { cache: "no-store" });
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        if (ativo) {
-          setDados(json);
-          setErro("");
-        }
-      } catch {
-        if (ativo) setErro("Não foi possível carregar os saldos. Tente atualizar a página em instantes.");
-      }
-    }
-    carregar();
-    const t = setInterval(carregar, 60_000);
-    return () => {
-      ativo = false;
-      clearInterval(t);
-    };
-  }, []);
+    carregarPainel();
+    const t = setInterval(carregarPainel, 60_000);
+    return () => clearInterval(t);
+  }, [carregarPainel]);
 
-  const linhas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return (dados?.seguradoras ?? []).filter((s) => !q || s.nome.toLowerCase().includes(q));
-  }, [dados, busca]);
+  useEffect(() => {
+    carregarDetalhe();
+    const t = setInterval(carregarDetalhe, 60_000);
+    return () => clearInterval(t);
+  }, [carregarDetalhe]);
+
+  function escolher(id: string) {
+    setSegId(id);
+    try {
+      localStorage.setItem(SEG_KEY, id);
+    } catch {}
+  }
+
+  const r = detalhe?.resumo.id === segId ? detalhe.resumo : painel?.seguradoras.find((s) => s.id === segId);
+  const movimentos = detalhe?.resumo.id === segId ? detalhe.movimentos : [];
 
   return (
     <>
@@ -110,7 +220,7 @@ export default function PainelPage() {
             <p className="text-white/80 text-sm mt-1">Conta corrente de descontos nas seguradoras</p>
           </div>
           <Link
-            href="/solicitar"
+            href={segId ? `/solicitar?seguradora=${segId}` : "/solicitar"}
             className="rounded-lg px-5 py-2.5 font-semibold text-sm"
             style={{ background: "#c2a360", color: "#072a3c" }}
           >
@@ -123,142 +233,117 @@ export default function PainelPage() {
         {erro && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-6">{erro}</p>
         )}
+        {!painel && !erro && <p className="text-gray-500">Carregando saldos...</p>}
 
-        {!dados && !erro && <p className="text-gray-500">Carregando saldos...</p>}
-
-        {dados && (
+        {painel && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-              {[
-                { label: "Saldo total", v: dados.totais.saldo },
-                { label: "Em reserva", v: dados.totais.reserva },
-                { label: "Saldo à utilizar", v: dados.totais.saldo_a_utilizar, destaque: true },
-              ].map((c) => (
-                <div
-                  key={c.label}
-                  className="bg-white rounded-xl p-5 shadow-sm"
-                  style={c.destaque ? { borderTop: "4px solid #c2a360" } : { borderTop: "4px solid #072a3c" }}
-                >
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">{c.label}</p>
-                  <p className="text-2xl">
-                    <Valor v={c.v} destaque />
-                  </p>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
+                Escolha a seguradora
+              </h2>
+              <SeletorMes mes={mes} meses={painel.meses} onChange={setMes} />
             </div>
 
-            <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-              <input
-                type="search"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar seguradora..."
-                className="w-full sm:w-72 border border-gray-300 rounded-lg px-3 py-2 bg-white"
-              />
-              {dados.atualizado_em && (
-                <p className="text-xs text-gray-500">Última movimentação: {formatDateTime(dados.atualizado_em)}</p>
-              )}
-            </div>
-
-            {dados.seguradoras.length === 0 ? (
+            {painel.seguradoras.length === 0 ? (
               <p className="text-gray-500 bg-white rounded-xl p-6 shadow-sm">Nenhuma seguradora cadastrada ainda.</p>
             ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+                {painel.seguradoras.map((s) => {
+                  const ativa = s.id === segId;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => escolher(s.id)}
+                      aria-pressed={ativa}
+                      className="bg-white rounded-xl p-3 shadow-sm text-left flex flex-col gap-2 cursor-pointer transition"
+                      style={{ outline: ativa ? "3px solid #c2a360" : "1px solid #e8e6df", outlineOffset: ativa ? 0 : -1 }}
+                    >
+                      <Logo nome={s.nome} url={s.logo_url} size={34} />
+                      <span className="font-semibold text-sm" style={{ color: "#072a3c" }}>
+                        {s.nome}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Disponível <Valor v={s.saldo_a_utilizar} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {r && (
               <>
-                {/* Tabela (telas médias e grandes) */}
-                <div className="hidden sm:block bg-white rounded-xl shadow-sm overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr style={{ background: "#072a3c" }} className="text-white text-left">
-                        <th className="px-4 py-3 font-semibold">Seguradora</th>
-                        <th className="px-4 py-3 font-semibold text-right">Saldo</th>
-                        <th className="px-4 py-3 font-semibold text-right">Reserva</th>
-                        <th className="px-4 py-3 font-semibold text-right" style={{ color: "#d6bd8a" }}>
-                          Saldo à utilizar
-                        </th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {linhas.map((s) => (
-                        <tr key={s.id} className="border-t border-gray-100 hover:bg-[#f6f6f6]">
-                          <td className="px-4 py-3 font-medium">
-                            <span className="flex items-center gap-3">
-                              <Logo nome={s.nome} url={s.logo_url} />
-                              {s.nome}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Valor v={s.saldo} />
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-600">
-                            <Valor v={s.reserva} />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Valor v={s.saldo_a_utilizar} destaque />
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Link
-                              href={`/solicitar?seguradora=${s.id}`}
-                              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white whitespace-nowrap"
-                              style={{ background: "#072a3c" }}
-                            >
-                              Solicitar
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                      {linhas.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
-                            Nenhuma seguradora encontrada.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <Logo nome={r.nome} url={r.logo_url} size={40} />
+                  <h2 className="font-heading text-xl" style={{ color: "#072a3c" }}>
+                    {r.nome} · {formatMes(mes)}
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo</p>
+                    <p className="text-2xl">
+                      <Valor v={r.saldo} destaque />
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Reserva</p>
+                    <p className="text-2xl">
+                      <Valor v={r.reserva} destaque />
+                    </p>
+                    {r.em_analise > 0 && (
+                      <p className="text-xs mt-1" style={{ color: "#8a6a1f" }}>
+                        inclui {formatBRL(r.em_analise)} em análise
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #c2a360" }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo à utilizar</p>
+                    <p className="text-2xl">
+                      <Valor v={r.saldo_a_utilizar} destaque />
+                    </p>
+                    <Link
+                      href={`/solicitar?seguradora=${r.id}`}
+                      className="inline-block text-xs font-semibold mt-2 underline"
+                      style={{ color: "#072a3c" }}
+                    >
+                      Solicitar nesta seguradora →
+                    </Link>
+                  </div>
                 </div>
 
-                {/* Cards (celular) */}
-                <div className="sm:hidden flex flex-col gap-3">
-                  {linhas.map((s) => (
-                    <div key={s.id} className="bg-white rounded-xl p-4 shadow-sm">
-                      <p className="font-semibold mb-3 flex items-center gap-3" style={{ color: "#072a3c" }}>
-                        <Logo nome={s.nome} url={s.logo_url} />
-                        {s.nome}
-                      </p>
-                      <dl className="grid grid-cols-2 gap-y-1 text-sm">
-                        <dt className="text-gray-500">Saldo</dt>
-                        <dd className="text-right">
-                          <Valor v={s.saldo} />
-                        </dd>
-                        <dt className="text-gray-500">Reserva</dt>
-                        <dd className="text-right">
-                          <Valor v={s.reserva} />
-                        </dd>
-                        <dt className="text-gray-500 font-semibold">Saldo à utilizar</dt>
-                        <dd className="text-right">
-                          <Valor v={s.saldo_a_utilizar} destaque />
-                        </dd>
-                      </dl>
-                      <Link
-                        href={`/solicitar?seguradora=${s.id}`}
-                        className="block text-center mt-3 rounded-lg py-2 text-sm font-semibold text-white"
-                        style={{ background: "#072a3c" }}
-                      >
-                        Solicitar reserva
-                      </Link>
+                <section className="bg-white rounded-xl p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
+                      Movimentações
+                    </h2>
+                    <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                      {(["aprovada", "reprovada", "em_analise"] as const).map((k) => (
+                        <span key={k} className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: SITUACAO[k].cor }} />
+                          {SITUACAO[k].label}
+                        </span>
+                      ))}
                     </div>
-                  ))}
-                  {linhas.length === 0 && <p className="text-center text-gray-500 py-4">Nenhuma seguradora encontrada.</p>}
-                </div>
+                  </div>
+                  {movimentos.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4">Nenhuma movimentação em {formatMes(mes)}.</p>
+                  ) : (
+                    <ul className="flex flex-col divide-y divide-gray-100">
+                      {movimentos.map((m) => (
+                        <LinhaMovimento key={m.id} m={m} />
+                      ))}
+                    </ul>
+                  )}
+                </section>
               </>
             )}
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
-              <strong>Saldo</strong>: desconto disponível na conta da seguradora. <strong>Reserva</strong>: valores já
-              comprometidos com negociações em andamento. <strong>Saldo à utilizar</strong>: o que ainda está livre para
-              novas negociações (saldo − reserva). Para usar o desconto, clique em <strong>Solicitar</strong> na
-              seguradora e escolha o gestor comercial que vai analisar.
+              A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês menos o
+              que já foi utilizado. <strong>Reserva</strong>: valores aprovados aguardando uso e solicitações em análise
+              (já saem do disponível enquanto o gestor analisa; se não aprovadas, voltam). <strong>Saldo à utilizar</strong>:
+              o que ainda está livre.
             </p>
           </>
         )}

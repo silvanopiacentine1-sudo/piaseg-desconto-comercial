@@ -54,6 +54,9 @@ export default function Header() {
               </span>
             )}
           </Link>
+          <Link href="/admin/relatorio" className="text-white/90 hover:text-white font-semibold">
+            Relatório
+          </Link>
           <Link href="/admin/gestores" className="text-white/90 hover:text-white font-semibold">
             Gestores
           </Link>
