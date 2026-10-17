@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -11,7 +12,7 @@ from typing import Literal, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -96,6 +97,17 @@ def _save(path: Path, data) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)  # gravação atômica: nunca deixa o arquivo pela metade
+    _marcar_alteracao()
+
+
+# Versão dos dados: muda a cada gravação. As telas (pública e admin) consultam
+# GET /versao a cada poucos segundos e só recarregam quando ela muda — é o que
+# faz a resposta do gestor aparecer no painel do franqueado sem refresh.
+_versao = {"v": time.time_ns()}
+
+
+def _marcar_alteracao() -> None:
+    _versao["v"] = time.time_ns()
 
 
 def now_iso() -> str:
@@ -347,6 +359,11 @@ def _operador(nome: str) -> str:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/versao")
+def versao():
+    return JSONResponse({"v": str(_versao["v"])}, headers={"Cache-Control": "no-store"})
 
 
 _CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "liberado", "saldo_a_utilizar", "atualizado_em")
@@ -1101,4 +1118,5 @@ def restore_backup(name: str, _: None = Depends(require_admin)):
                 shutil.copy2(src, DATA_DIR / filename)
         if (snapshot_dir / "logos").is_dir():
             shutil.copytree(snapshot_dir / "logos", LOGOS_DIR, dirs_exist_ok=True)
+        _marcar_alteracao()
     return {"ok": True, "backup_seguranca": seguranca}

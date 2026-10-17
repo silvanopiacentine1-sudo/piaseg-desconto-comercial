@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAoVivo } from "../../lib/aoVivo";
 import Header from "../../components/Header";
 import { apiJson } from "../../lib/api";
 import { getOperador, isAdminLoggedIn } from "../../lib/auth";
@@ -148,6 +149,7 @@ export default function SolicitacoesPage() {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
   }, []);
+  useAoVivo(carregar);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {

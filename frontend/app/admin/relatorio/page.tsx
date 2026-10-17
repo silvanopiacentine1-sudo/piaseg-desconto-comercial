@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAoVivo } from "../../lib/aoVivo";
 import Header from "../../components/Header";
 import SeletorMes from "../../components/SeletorMes";
 import { apiJson, downloadFile } from "../../lib/api";
@@ -76,6 +77,7 @@ export default function RelatorioPage() {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
   }, [query]);
+  useAoVivo(carregar);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {

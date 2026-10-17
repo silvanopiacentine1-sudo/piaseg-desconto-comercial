@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiJson } from "../lib/api";
+import { useAoVivo } from "../lib/aoVivo";
 import { getOperador, logout, setOperador } from "../lib/auth";
 
 export default function Header() {
@@ -12,12 +13,23 @@ export default function Header() {
 
   const [pendentes, setPendentes] = useState(0);
 
-  useEffect(() => {
-    setOperadorState(getOperador());
+  const contarPendentes = useCallback(() => {
     apiJson<{ status: string }[]>("/admin/solicitacoes")
       .then((l) => setPendentes(l.filter((s) => s.status === "pendente").length))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setOperadorState(getOperador());
+    contarPendentes();
+  }, [contarPendentes]);
+  useAoVivo(contarPendentes);
+
+  // contador também na aba do navegador, para o gestor ver chegar nova solicitação
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, "");
+    document.title = pendentes > 0 ? `(${pendentes}) ${base}` : base;
+  }, [pendentes]);
 
   function handleLogout() {
     logout();

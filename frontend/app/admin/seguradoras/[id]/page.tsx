@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAoVivo } from "../../../lib/aoVivo";
 import Header from "../../../components/Header";
 import Logo from "../../../components/Logo";
 import SeletorMes from "../../../components/SeletorMes";
@@ -73,11 +74,12 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       const r = await apiJson<{ resumo: Resumo; lancamentos: Lancamento[] }>(`/admin/seguradoras/${id}?mes=${mes}`);
       setResumo(r.resumo);
       setLancs(r.lancamentos);
-      setEditNome(r.resumo.nome);
+      setEditNome((atual) => atual || r.resumo.nome); // não apaga o que está sendo digitado
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
   }, [id, mes]);
+  useAoVivo(carregar);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { enviarLogo } from "../lib/logo";
+import { useAoVivo } from "../lib/aoVivo";
 import Header from "../components/Header";
 import Logo from "../components/Logo";
 import SeletorMes from "../components/SeletorMes";
@@ -29,6 +30,7 @@ export default function AdminPage() {
       setErro(e instanceof Error ? e.message : "Erro ao carregar");
     }
   }, [mes]);
+  useAoVivo(carregar);
 
   useEffect(() => {
     if (!isAdminLoggedIn()) {

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, use, useEffect, useState } from "react";
+import { Suspense, use, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { API } from "../../lib/api";
+import { useAoVivo } from "../../lib/aoVivo";
 import { addMinha } from "../../lib/minhas";
 import { SOLIC_STATUS, formatBRL, formatDateTime, type Solicitacao } from "../../lib/types";
 
@@ -19,7 +20,7 @@ function Detalhe({ id }: { id: string }) {
   const [s, setS] = useState<Solicitacao | null>(null);
   const [erro, setErro] = useState("");
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
     fetch(`${API}/solicitacoes/${id}`, { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) throw new Error();
@@ -29,6 +30,9 @@ function Detalhe({ id }: { id: string }) {
       })
       .catch(() => setErro("Solicitação não encontrada."));
   }, [id]);
+
+  useEffect(carregar, [carregar]);
+  useAoVivo(carregar); // a resposta do gestor aparece aqui sem refresh
 
   if (erro) return <p className="text-red-700">{erro}</p>;
   if (!s) return <p className="text-gray-500">Carregando...</p>;

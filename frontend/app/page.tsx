@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import Logo from "./components/Logo";
 import SeletorMes from "./components/SeletorMes";
 import { API } from "./lib/api";
+import { useAoVivo } from "./lib/aoVivo";
 import { getMinhas } from "./lib/minhas";
 import {
   SITUACAO,
@@ -105,7 +106,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
 function MinhasSolicitacoes() {
   const [itens, setItens] = useState<Solicitacao[]>([]);
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
     const minhas = getMinhas();
     if (minhas.length === 0) return;
     Promise.all(
@@ -116,6 +117,9 @@ function MinhasSolicitacoes() {
       ),
     ).then((r) => setItens(r.filter(Boolean)));
   }, []);
+
+  useEffect(carregar, [carregar]);
+  useAoVivo(carregar);
 
   if (itens.length === 0) return null;
   return (
@@ -188,15 +192,17 @@ export default function PainelPage() {
 
   useEffect(() => {
     carregarPainel();
-    const t = setInterval(carregarPainel, 60_000);
-    return () => clearInterval(t);
   }, [carregarPainel]);
 
   useEffect(() => {
     carregarDetalhe();
-    const t = setInterval(carregarDetalhe, 60_000);
-    return () => clearInterval(t);
   }, [carregarDetalhe]);
+
+  // atualiza sozinho quando o gestor responde ou alguém solicita (sem refresh)
+  useAoVivo(() => {
+    carregarPainel();
+    carregarDetalhe();
+  });
 
   function escolher(id: string) {
     setSegId(id);
