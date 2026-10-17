@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAoVivo } from "../../lib/aoVivo";
 import Header from "../../components/Header";
+import NovaReserva from "./NovaReserva";
 import { apiJson } from "../../lib/api";
 import { getOperador, isAdminLoggedIn } from "../../lib/auth";
 import { SOLIC_STATUS, formatBRL, formatDateTime, type Gestor, type Solicitacao, type StatusSolicitacao } from "../../lib/types";
@@ -66,11 +67,22 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           <p className="text-sm text-gray-600">
             {s.franqueado} → <strong>{s.gestor_nome}</strong>
           </p>
-          <p className="text-xs text-gray-400">Enviada em {formatDateTime(s.created_at)}</p>
+          <p className="text-xs text-gray-400">
+            {s.origem === "gestor"
+              ? `Registrada por ${s.criado_por} · pedido via ${s.canal} · ${formatDateTime(s.created_at)}`
+              : `Enviada pelo franqueado em ${formatDateTime(s.created_at)}`}
+          </p>
         </div>
-        <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
-          {st.label}
-        </span>
+        <div className="flex flex-wrap gap-2">
+          {s.teste && (
+            <span className="text-xs font-bold rounded-full px-2.5 py-1" style={{ background: "#ede9fe", color: "#5b21b6" }}>
+              🎓 TREINAMENTO
+            </span>
+          )}
+          <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
+            {st.label}
+          </span>
+        </div>
       </div>
 
       <div className="text-sm rounded-lg p-3 mb-3 whitespace-pre-wrap" style={{ background: "#f6f6f6" }}>
@@ -136,6 +148,8 @@ export default function SolicitacoesPage() {
   const [filtro, setFiltro] = useState<StatusSolicitacao | "todas">("pendente");
   const [gestor, setGestor] = useState("");
   const [erro, setErro] = useState("");
+  const [novaAberta, setNovaAberta] = useState(false);
+  const [aviso, setAviso] = useState("");
 
   const carregar = useCallback(async () => {
     try {
@@ -178,9 +192,60 @@ export default function SolicitacoesPage() {
     <>
       <Header />
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
-        <h1 className="font-heading text-2xl mb-4" style={{ color: "#072a3c" }}>
-          Solicitações de reserva
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h1 className="font-heading text-2xl" style={{ color: "#072a3c" }}>
+            Solicitações de reserva
+          </h1>
+          {!novaAberta && (
+            <button
+              onClick={() => {
+                setAviso("");
+                setNovaAberta(true);
+              }}
+              className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer"
+              style={{ background: "#c2a360", color: "#072a3c" }}
+            >
+              + Reservar para franqueado
+            </button>
+          )}
+        </div>
+
+        {(lista ?? []).some((s) => s.teste) && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-2 mb-4 text-sm" style={{ background: "#ede9fe", color: "#4c1d95" }}>
+            <span>
+              🎓 Há {(lista ?? []).filter((s) => s.teste).length} solicitação(ões) de treinamento — não contam nos saldos reais.
+            </span>
+            <button
+              onClick={async () => {
+                if (!window.confirm("Apagar todas as solicitações e reservas do FRANQUEADO TESTE (treinamento)? Nada de franqueado real é afetado (fica um backup).")) return;
+                try {
+                  const r = await apiJson<{ solicitacoes: number }>("/admin/treinamento", { method: "DELETE" });
+                  setAviso(`Dados de treinamento apagados (${r.solicitacoes} solicitação(ões)).`);
+                  carregar();
+                } catch (e) {
+                  setErro(e instanceof Error ? e.message : "Erro ao limpar");
+                }
+              }}
+              className="font-semibold underline cursor-pointer"
+            >
+              Limpar dados de treinamento
+            </button>
+          </div>
+        )}
+        {aviso && (
+          <p className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">✓ {aviso}</p>
+        )}
+        {novaAberta && (
+          <NovaReserva
+            gestores={gestores}
+            onFechar={() => setNovaAberta(false)}
+            onCriada={(msg) => {
+              setNovaAberta(false);
+              setAviso(msg);
+              carregar();
+            }}
+          />
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <div className="flex flex-wrap gap-1 rounded-lg p-1 bg-white shadow-sm">

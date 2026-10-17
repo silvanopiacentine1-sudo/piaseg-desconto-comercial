@@ -471,6 +471,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                                   <span className="block text-xs text-gray-500">{STATUS_LABEL[l.status]}</span>
                                 )}
                                 {l.estornado && <span className="block text-xs text-red-600">Estornado</span>}
+                                {l.teste && <span className="block text-xs font-bold" style={{ color: "#5b21b6" }}>🎓 Treinamento (não conta)</span>}
                               </td>
                               <td
                                 className={`py-2 pr-3 text-right tabular-nums whitespace-nowrap ${l.estornado ? "line-through" : ""}`}

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Logo from "../components/Logo";
 import { API } from "../lib/api";
 import { addMinha } from "../lib/minhas";
-import { formatBRL, parseValor, type Gestor, type PainelPublico, type Solicitacao } from "../lib/types";
+import { FRANQUEADO_TESTE, formatBRL, parseValor, type Gestor, type PainelPublico, type Solicitacao } from "../lib/types";
 
 const FRANQ_KEY = "desconto_franqueado";
 
@@ -151,6 +151,12 @@ function Formulario() {
               />
             )}
           </div>
+
+          {franqueado === FRANQUEADO_TESTE && (
+            <p className="text-sm rounded-lg px-3 py-2" style={{ background: "#ede9fe", color: "#4c1d95" }}>
+              🎓 <strong>Treinamento:</strong> esta solicitação é uma simulação e não altera o saldo real da seguradora.
+            </p>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">Direcionar para o gestor *</label>

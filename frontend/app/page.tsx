@@ -8,6 +8,7 @@ import { API } from "./lib/api";
 import { useAoVivo } from "./lib/aoVivo";
 import { getMinhas } from "./lib/minhas";
 import {
+  FRANQUEADO_TESTE,
   SITUACAO,
   SOLIC_STATUS,
   formatBRL,
@@ -22,6 +23,7 @@ import {
 } from "./lib/types";
 
 const SEG_KEY = "desconto_seguradora_escolhida";
+const TREINO_KEY = "desconto_modo_treino";
 
 function Valor({ v, destaque = false }: { v: number; destaque?: boolean }) {
   return (
@@ -64,7 +66,8 @@ function LinhaMovimento({ m }: { m: Movimento }) {
           <p className="text-xs text-gray-500">
             {formatDate(m.data)}
             {m.numero && ` · Solicitação #${m.numero}`}
-            {m.gestor_nome && ` · para ${m.gestor_nome}`}
+            {m.gestor_nome && !m.criado_por && ` · para ${m.gestor_nome}`}
+            {m.criado_por && ` · pedido via ${m.canal}, reservado por ${m.criado_por}`}
             {m.origem === "lancamento" && m.situacao !== "credito" && m.descricao && ` · ${m.descricao}`}
           </p>
         </div>
@@ -82,7 +85,10 @@ function LinhaMovimento({ m }: { m: Movimento }) {
         </div>
       </div>
       <div>
-        <Badge situacao={m.situacao} />
+        <span className="flex flex-wrap gap-2">
+          <Badge situacao={m.situacao} />
+          {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
+        </span>
       </div>
       {m.observacao && (
         <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: "#f6f6f6" }}>
@@ -154,6 +160,23 @@ function MinhasSolicitacoes() {
 
 export default function PainelPage() {
   const [mes, setMes] = useState(mesAtual());
+  const [treino, setTreino] = useState(false);
+
+  // modo treinamento: ?treino=1 no link ou ligado pelo botão (vale na sessão da aba)
+  useEffect(() => {
+    try {
+      const url = new URLSearchParams(window.location.search).get("treino") === "1";
+      if (url || sessionStorage.getItem(TREINO_KEY) === "1") setTreino(true);
+    } catch {}
+  }, []);
+
+  function alternarTreino() {
+    const novo = !treino;
+    setTreino(novo);
+    try {
+      sessionStorage.setItem(TREINO_KEY, novo ? "1" : "0");
+    } catch {}
+  }
   const [painel, setPainel] = useState<PainelPublico | null>(null);
   const [segId, setSegId] = useState("");
   const [detalhe, setDetalhe] = useState<{ resumo: ResumoPublico; movimentos: Movimento[] } | null>(null);
@@ -161,7 +184,7 @@ export default function PainelPage() {
 
   const carregarPainel = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/painel?mes=${mes}`, { cache: "no-store" });
+      const res = await fetch(`${API}/painel?mes=${mes}${treino ? "&treino=true" : ""}`, { cache: "no-store" });
       if (!res.ok) throw new Error();
       const p: PainelPublico = await res.json();
       setPainel(p);
@@ -177,7 +200,7 @@ export default function PainelPage() {
     } catch {
       setErro("Não foi possível carregar os saldos. Tente atualizar a página em instantes.");
     }
-  }, [mes]);
+  }, [mes, treino]);
 
   const carregarDetalhe = useCallback(async () => {
     if (!segId) {
@@ -185,10 +208,10 @@ export default function PainelPage() {
       return;
     }
     try {
-      const res = await fetch(`${API}/painel/${segId}?mes=${mes}`, { cache: "no-store" });
+      const res = await fetch(`${API}/painel/${segId}?mes=${mes}${treino ? "&treino=true" : ""}`, { cache: "no-store" });
       if (res.ok) setDetalhe(await res.json());
     } catch {}
-  }, [segId, mes]);
+  }, [segId, mes, treino]);
 
   useEffect(() => {
     carregarPainel();
@@ -241,13 +264,36 @@ export default function PainelPage() {
         )}
         {!painel && !erro && <p className="text-gray-500">Carregando saldos...</p>}
 
+        {treino && (
+          <div className="rounded-xl px-4 py-3 mb-6 text-sm" style={{ background: "#ede9fe", color: "#4c1d95", border: "1px solid #c4b5fd" }}>
+            <strong>🎓 MODO TREINAMENTO — simulação.</strong> Os valores abaixo incluem os pedidos do{" "}
+            <strong>{FRANQUEADO_TESTE}</strong>. Os saldos reais das seguradoras <strong>não são alterados</strong> e os
+            franqueados não veem estes movimentos.{" "}
+            <button onClick={alternarTreino} className="underline font-semibold cursor-pointer">
+              Sair do treinamento
+            </button>
+          </div>
+        )}
+
         {painel && (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
                 Escolha a seguradora
               </h2>
-              <SeletorMes mes={mes} meses={painel.meses} onChange={setMes} />
+              <div className="flex flex-wrap items-center gap-3">
+                {!treino && (
+                  <button
+                    onClick={alternarTreino}
+                    className="text-xs rounded-full px-3 py-1.5 cursor-pointer"
+                    style={{ background: "#ede9fe", color: "#5b21b6" }}
+                    title="Simulação para treinar novos franqueados — não altera os saldos reais"
+                  >
+                    🎓 Modo treinamento
+                  </button>
+                )}
+                <SeletorMes mes={mes} meses={painel.meses} onChange={setMes} />
+              </div>
             </div>
 
             {painel.seguradoras.length === 0 ? (

@@ -40,6 +40,14 @@ function Detalhe({ id }: { id: string }) {
 
   return (
     <>
+      {s.teste && (
+        <div className="text-sm rounded-lg px-4 py-3 mb-4" style={{ background: "#ede9fe", color: "#4c1d95" }}>
+          🎓 <strong>Solicitação de treinamento</strong> — não altera o saldo real.{" "}
+          <Link href="/?treino=1" className="underline font-semibold">
+            Ver no painel em modo treinamento
+          </Link>
+        </div>
+      )}
       {params.get("nova") && (
         <div className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
           ✓ Solicitação enviada para <strong>{s.gestor_nome}</strong>. Guarde o protocolo <strong>#{s.numero}</strong> — ela

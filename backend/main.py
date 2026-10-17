@@ -218,6 +218,17 @@ class SolicitacaoIn(BaseModel):
     observacao: str = ""
 
 
+CANAIS = ("WhatsApp", "Telefone", "E-mail", "Presencial", "Outro")
+
+
+class SolicitacaoGestorIn(SolicitacaoIn):
+    """Reserva feita pelo gestor em nome do franqueado (pedido por WhatsApp etc.)."""
+    canal: str = "WhatsApp"
+    aprovar: bool = True
+    resposta: str = ""
+    operador: str
+
+
 class RespostaSolicitacao(BaseModel):
     decisao: Literal["aprovar", "reprovar"]
     resposta: str = ""
@@ -276,7 +287,19 @@ def _meses_disponiveis(lancamentos: list[dict], solicitacoes: list[dict]) -> lis
     return sorted(meses, reverse=True)
 
 
-def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] = (), mes: Optional[str] = None) -> dict:
+# Franqueado de treinamento: as gestoras treinam novos franqueados com ele.
+# Tudo que for feito em nome dele funciona normalmente, mas fica FORA dos
+# saldos reais, do extrato público e do relatório (só aparece no modo
+# treinamento do painel, como simulação). Identificado pelo nome.
+FRANQUEADO_TESTE = "FRANQUEADO TESTE (treinamento)"
+
+
+def _eh_teste(nome: Optional[str]) -> bool:
+    return (nome or "").strip().lower() == FRANQUEADO_TESTE.lower()
+
+
+def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] = (), mes: Optional[str] = None,
+            treino: bool = False) -> dict:
     """Quadros do painel (tudo dentro do mês informado):
     Saldo     = verba creditada (saldo inicial);
     Reserva   = solicitações em análise + reservas manuais em aberto;
@@ -285,11 +308,15 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
     creditos = utilizado = reservado = liberado_aberto = em_analise = 0
     ultimo = None
     for s in solicitacoes:
+        if _eh_teste(s["franqueado"]) and not treino:
+            continue
         if s["seguradora_id"] == seguradora["id"] and s["status"] == "pendente" and _no_mes(_sol_data(s), mes):
             em_analise += s["valor_centavos"]
             ultimo = max(ultimo or "", s["created_at"])
     for l in lancamentos:
         if l["seguradora_id"] != seguradora["id"] or not _no_mes(l["data"], mes):
+            continue
+        if _eh_teste(l.get("franqueado")) and not treino:
             continue
         ultimo = max(ultimo or "", l.get("updated_at") or l["created_at"])
         if l.get("estornado"):
@@ -341,6 +368,7 @@ def _lancamento_or_404(lancamentos: list[dict], lanc_id: str) -> dict:
 def _public_lancamento(l: dict) -> dict:
     out = dict(l)
     out["valor"] = l["valor_centavos"] / 100
+    out["teste"] = _eh_teste(l.get("franqueado"))
     return out
 
 
@@ -370,7 +398,7 @@ _CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", 
 
 
 @app.get("/painel")
-def painel(mes: Optional[str] = None):
+def painel(mes: Optional[str] = None, treino: bool = False):
     """Painel aberto aos franqueados: números por seguradora ativa no mês
     (padrão = mês atual; mes=todos = período inteiro)."""
     mes_param = mes
@@ -378,7 +406,7 @@ def painel(mes: Optional[str] = None):
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos = _load(LANCAMENTOS_FILE)
     solicitacoes = _load(SOLICITACOES_FILE)
-    linhas = [_resumo(s, lancamentos, solicitacoes, mes) for s in seguradoras if s.get("ativa", True)]
+    linhas = [_resumo(s, lancamentos, solicitacoes, mes, treino) for s in seguradoras if s.get("ativa", True)]
     linhas.sort(key=lambda r: r["nome"].lower())
     return {
         "mes": mes or "todos",
@@ -394,7 +422,8 @@ def painel(mes: Optional[str] = None):
     }
 
 
-def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], gestores: list[dict], mes: Optional[str]) -> list[dict]:
+def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], gestores: list[dict], mes: Optional[str],
+                treino: bool = False) -> list[dict]:
     """Extrato público tipo conta corrente: créditos, usos e solicitações, com
     o efeito de cada um no saldo à utilizar e o saldo após cada movimento.
     Lançamentos estornados não aparecem; reservas criadas por aprovação de
@@ -404,6 +433,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
     itens = []
     for l in lancamentos:
         if l["seguradora_id"] != seg_id or l.get("estornado") or l.get("solicitacao_id") or not _no_mes(l["data"], mes):
+            continue
+        if _eh_teste(l.get("franqueado")) and not treino:
             continue
         v = l["valor_centavos"]
         if l["tipo"] == "credito":
@@ -417,9 +448,12 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "id": l["id"], "origem": "lancamento", "tipo": l["tipo"], "situacao": situacao,
             "data": l["data"], "ordem": l["created_at"], "valor": v / 100, "efeito_c": efeito,
             "franqueado": l.get("franqueado", ""), "descricao": l.get("descricao", ""),
+            "teste": _eh_teste(l.get("franqueado")),
         })
     for s in solicitacoes:
         if s["seguradora_id"] != seg_id or not _no_mes(_sol_data(s), mes):
+            continue
+        if _eh_teste(s["franqueado"]) and not treino:
             continue
         v = s["valor_centavos"]
         if s["status"] == "pendente":
@@ -436,6 +470,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "data": _sol_data(s), "ordem": s["created_at"], "valor": v / 100, "efeito_c": efeito,
             "franqueado": s["franqueado"], "observacao": s.get("observacao", ""),
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
+            "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
         })
@@ -451,18 +486,19 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
 
 
 @app.get("/painel/{seg_id}")
-def painel_seguradora(seg_id: str, mes: Optional[str] = None):
+def painel_seguradora(seg_id: str, mes: Optional[str] = None, treino: bool = False):
     mes = _validar_mes(mes) if mes else _hoje_sp()[:7]
     seguradoras = _load(SEGURADORAS_FILE)
     seg = next((s for s in seguradoras if s["id"] == seg_id and s.get("ativa", True)), None)
     if not seg:
         raise HTTPException(404, "Seguradora não encontrada")
     lancamentos, solicitacoes = _load(LANCAMENTOS_FILE), _load(SOLICITACOES_FILE)
-    r = _resumo(seg, lancamentos, solicitacoes, mes)
+    r = _resumo(seg, lancamentos, solicitacoes, mes, treino)
     return {
         "mes": mes or "todos",
+        "treino": treino,
         "resumo": {k: r[k] for k in _CAMPOS_PUBLICOS},
-        "movimentos": _movimentos(seg_id, lancamentos, solicitacoes, _load(GESTORES_FILE), mes),
+        "movimentos": _movimentos(seg_id, lancamentos, solicitacoes, _load(GESTORES_FILE), mes, treino),
     }
 
 
@@ -759,7 +795,7 @@ def franqueados_lista():
     agora = datetime.now(timezone.utc).timestamp()
     if agora - _franq_cache["em"] > FRANQUEADOS_CACHE_S or not _franq_cache["nomes"]:
         try:
-            with urllib.request.urlopen(FRANQUEADOS_API_URL, timeout=8) as r:
+            with urllib.request.urlopen(FRANQUEADOS_API_URL, timeout=15) as r:
                 dados = json.loads(r.read().decode("utf-8"))
             nomes = sorted(
                 {(f.get("nome_fantasia") or "").strip() for f in dados if f.get("status", "ativo") == "ativo"} - {""},
@@ -768,7 +804,10 @@ def franqueados_lista():
             _franq_cache.update({"em": agora, "nomes": nomes})
         except Exception as e:  # fora do ar: devolve o último cache (ou vazio)
             print(f"[franqueados] falha ao buscar lista: {e}")
-    return _franq_cache["nomes"]
+    reais = [n for n in _franq_cache["nomes"] if not _eh_teste(n)]
+    # sem a lista real (sistema de franqueados fora do ar) devolve vazio: o
+    # formulário cai para digitação livre em vez de mostrar só o de treinamento
+    return [FRANQUEADO_TESTE] + reais if reais else []
 
 
 # ---------------------------------------------------------------------------
@@ -783,6 +822,7 @@ def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], la
     gest = next((x for x in gestores if x["id"] == s["gestor_id"]), None)
     out = {k: v for k, v in s.items() if k != "valor_centavos"}
     out["valor"] = s["valor_centavos"] / 100
+    out["teste"] = _eh_teste(s["franqueado"])
     out["seguradora_nome"] = seg["nome"] if seg else "?"
     out["gestor_nome"] = gest["nome"] if gest else "?"
     if s.get("lancamento_id"):
@@ -847,9 +887,103 @@ def list_solicitacoes(_: None = Depends(require_admin)):
             chave = (s["seguradora_id"], v["data"][:7])
             if chave not in cache:
                 cache[chave] = _resumo(segs[s["seguradora_id"]], lancamentos, solicitacoes, chave[1])["saldo_a_utilizar"]
-            v["saldo_a_utilizar_atual"] = round(cache[chave] + s["valor_centavos"] / 100, 2)
+            proprio = 0 if _eh_teste(s["franqueado"]) else s["valor_centavos"] / 100  # teste não está no saldo real
+            v["saldo_a_utilizar_atual"] = round(cache[chave] + proprio, 2)
         out.append(v)
     return out
+
+
+def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
+    """Aplica a decisão do gestor na solicitação (chamar com _lock). Aprovar já
+    cria a reserva liberada na conta corrente da seguradora. Quem chama salva
+    a lista de solicitações depois."""
+    agora = now_iso()
+    if aprovar:
+        lancamentos = _load(LANCAMENTOS_FILE)
+        descricao = f'Solicitação #{s["numero"]}'
+        if s.get("observacao"):
+            descricao += f' — {s["observacao"]}'
+        lanc = {
+            "id": uuid.uuid4().hex[:12],
+            "seguradora_id": s["seguradora_id"],
+            "tipo": "reserva",
+            "status": "aberta",
+            "valor_centavos": s["valor_centavos"],
+            "descricao": descricao,
+            "franqueado": s["franqueado"],
+            "data": _sol_data(s),  # reserva fica no mês da solicitação
+            "operador": operador,
+            "created_at": agora,
+            "estornado": False,
+            "solicitacao_id": s["id"],
+        }
+        lancamentos.append(lanc)
+        _save(LANCAMENTOS_FILE, lancamentos)
+        s["lancamento_id"] = lanc["id"]
+    s["status"] = "aprovada" if aprovar else "reprovada"
+    s["resposta"] = resposta
+    s["respondido_por"] = operador
+    s["respondido_em"] = agora
+
+
+@app.post("/admin/solicitacoes", status_code=201)
+def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(require_admin)):
+    """Gestor registra a reserva em nome do franqueado (pedido chegou por
+    WhatsApp, telefone...). Por padrão já sai aprovada/liberada; com
+    aprovar=false fica em análise como um pedido normal."""
+    operador = _operador(body.operador)
+    franqueado = body.franqueado.strip()
+    if not franqueado:
+        raise HTTPException(400, "Informe o franqueado")
+    canal = body.canal if body.canal in CANAIS else "Outro"
+    with _lock:
+        seguradoras = _load(SEGURADORAS_FILE)
+        seg = next((x for x in seguradoras if x["id"] == body.seguradora_id and x.get("ativa", True)), None)
+        if not seg:
+            raise HTTPException(400, "Seguradora inválida")
+        gestores = _load(GESTORES_FILE)
+        if not any(g["id"] == body.gestor_id for g in gestores):
+            raise HTTPException(400, "Selecione o gestor responsável")
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = {
+            "id": uuid.uuid4().hex,
+            "numero": max((x["numero"] for x in solicitacoes), default=0) + 1,
+            "seguradora_id": seg["id"],
+            "valor_centavos": _cents(body.valor),
+            "franqueado": franqueado,
+            "gestor_id": body.gestor_id,
+            "observacao": body.observacao.strip(),
+            "status": "pendente",
+            "data": _hoje_sp(),
+            "created_at": now_iso(),
+            "origem": "gestor",
+            "canal": canal,
+            "criado_por": operador,
+        }
+        if body.aprovar:
+            _decidir(s, True, body.resposta.strip(), operador)
+        solicitacoes.append(s)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), gestores, _load(LANCAMENTOS_FILE))
+
+
+@app.delete("/admin/treinamento")
+def limpar_treinamento(_: None = Depends(require_admin)):
+    """Apaga SOMENTE solicitações e lançamentos do franqueado de treinamento
+    (backup antes). Nada de franqueado real é tocado."""
+    with _lock:
+        if os.getenv("DATA_DIR"):
+            _snapshot("antes-limpar-treino-")
+        solicitacoes = _load(SOLICITACOES_FILE)
+        lancamentos = _load(LANCAMENTOS_FILE)
+        sol_fica = [x for x in solicitacoes if not _eh_teste(x["franqueado"])]
+        lanc_fica = [x for x in lancamentos if not _eh_teste(x.get("franqueado"))]
+        removidos = {"solicitacoes": len(solicitacoes) - len(sol_fica), "lancamentos": len(lancamentos) - len(lanc_fica)}
+        if removidos["solicitacoes"]:
+            _save(SOLICITACOES_FILE, sol_fica)
+        if removidos["lancamentos"]:
+            _save(LANCAMENTOS_FILE, lanc_fica)
+    return removidos
 
 
 @app.post("/admin/solicitacoes/{sol_id}/responder")
@@ -865,34 +999,7 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
             raise HTTPException(404, "Solicitação não encontrada")
         if s["status"] != "pendente":
             raise HTTPException(400, "Essa solicitação já foi respondida")
-        agora = now_iso()
-        if body.decisao == "aprovar":
-            # aprovação já cria a reserva na conta corrente da seguradora
-            lancamentos = _load(LANCAMENTOS_FILE)
-            descricao = f'Solicitação #{s["numero"]}'
-            if s.get("observacao"):
-                descricao += f' — {s["observacao"]}'
-            lanc = {
-                "id": uuid.uuid4().hex[:12],
-                "seguradora_id": s["seguradora_id"],
-                "tipo": "reserva",
-                "status": "aberta",
-                "valor_centavos": s["valor_centavos"],
-                "descricao": descricao,
-                "franqueado": s["franqueado"],
-                "data": _sol_data(s),  # reserva fica no mês da solicitação
-                "operador": operador,
-                "created_at": agora,
-                "estornado": False,
-                "solicitacao_id": s["id"],
-            }
-            lancamentos.append(lanc)
-            _save(LANCAMENTOS_FILE, lancamentos)
-            s["lancamento_id"] = lanc["id"]
-        s["status"] = "aprovada" if body.decisao == "aprovar" else "reprovada"
-        s["resposta"] = resposta
-        s["respondido_por"] = operador
-        s["respondido_em"] = agora
+        _decidir(s, body.decisao == "aprovar", resposta, operador)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
 
@@ -924,7 +1031,7 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         return por_franq[chave]
 
     for l in lancamentos:
-        if l.get("estornado") or not entra(l["seguradora_id"], l["data"]):
+        if l.get("estornado") or _eh_teste(l.get("franqueado")) or not entra(l["seguradora_id"], l["data"]):
             continue
         v = l["valor_centavos"]
         if l["tipo"] == "credito":
@@ -942,7 +1049,7 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         r["por_seguradora"][seg_nome] = r["por_seguradora"].get(seg_nome, 0) + v
 
     for s in solicitacoes:
-        if not entra(s["seguradora_id"], _sol_data(s)):
+        if _eh_teste(s["franqueado"]) or not entra(s["seguradora_id"], _sol_data(s)):
             continue
         r = linha(s["franqueado"])
         campo = {"aprovada": "solic_aprovadas", "reprovada": "solic_reprovadas", "pendente": "solic_pendentes"}[s["status"]]

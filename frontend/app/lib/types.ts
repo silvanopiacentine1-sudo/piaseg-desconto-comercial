@@ -35,6 +35,7 @@ export interface Lancamento {
   status_em?: string;
   status_motivo?: string;
   solicitacao_id?: string;
+  teste?: boolean;
 }
 
 export type ResumoPublico = Pick<
@@ -74,6 +75,9 @@ export interface Movimento {
   descricao?: string;
   observacao?: string;
   gestor_nome?: string;
+  canal?: string | null;
+  criado_por?: string | null;
+  teste?: boolean;
   resposta?: string;
   respondido_por?: string;
   respondido_em?: string | null;
@@ -91,6 +95,8 @@ export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: 
 };
 
 const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+export const FRANQUEADO_TESTE = "FRANQUEADO TESTE (treinamento)";
 
 export function formatMes(mes: string): string {
   if (mes === "todos") return "Todos os meses";
@@ -128,6 +134,10 @@ export interface Solicitacao {
   respondido_em?: string;
   reserva_status?: StatusReserva | "estornada";
   saldo_a_utilizar_atual?: number;
+  teste?: boolean;
+  origem?: "gestor";
+  canal?: string;
+  criado_por?: string;
 }
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
@@ -174,7 +184,12 @@ export function formatDateTime(iso: string): string {
 export function parseValor(texto: string): number {
   const t = texto.trim().replace(/[R$\s]/g, "");
   if (!t) return NaN;
-  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  // padrão brasileiro: "3.000" e "1.234.567" são milhares; "1500.50" (ponto com 1-2 casas) é decimal
+  const normal = t.includes(",")
+    ? t.replace(/\./g, "").replace(",", ".")
+    : /^\d{1,3}(\.\d{3})+$/.test(t)
+      ? t.replace(/\./g, "")
+      : t;
   return Number(normal);
 }
 
