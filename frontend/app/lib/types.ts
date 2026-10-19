@@ -103,7 +103,7 @@ export interface Movimento {
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
   credito: { label: "Crédito de verba", cor: "#072a3c", fundo: "#e6edf1" },
   em_analise: { label: "Em análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
-  aprovada: { label: "Aprovada · liberada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  aprovada: { label: "Aprovada · transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
   aprovada_utilizada: { label: "Aprovada · utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
   reservada: { label: "Reservada", cor: "#1f7a4d", fundo: "#e8f3ec" },
   utilizada: { label: "Utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },

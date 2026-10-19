@@ -62,7 +62,7 @@ function Detalhe({ id }: { id: string }) {
             Solicitação #{s.numero}
           </h1>
           <span className="text-sm font-semibold rounded-full px-3 py-1" style={{ color: st.cor, background: st.fundo }}>
-            {st.label}
+            {s.status === "aprovada" ? "Aprovada · transmitida" : st.label}
           </span>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
@@ -120,7 +120,7 @@ function Detalhe({ id }: { id: string }) {
           <p className="text-sm rounded-lg px-3 py-2 mt-4" style={{ background: "#f1f1f1", color: "#4b5563" }}>
             ⌛ Esta reserva <strong>expirou</strong>
             {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`}: o prazo de 48h terminou sem aprovação e o valor voltou
-            para o saldo à utilizar. Se ainda precisar do desconto, faça uma nova solicitação.
+            para o Liberado. Se ainda precisar do desconto, faça uma nova solicitação.
           </p>
         )}
         {s.historico && s.historico.length > 0 && (

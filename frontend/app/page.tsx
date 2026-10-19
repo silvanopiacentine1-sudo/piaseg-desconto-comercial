@@ -53,7 +53,7 @@ function Badge({ situacao, label }: { situacao: Movimento["situacao"]; label?: s
   );
 }
 
-function LinhaMovimento({ m }: { m: Movimento }) {
+function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
   const s = SITUACAO[m.situacao];
   const titulo =
     m.situacao === "credito"
@@ -84,7 +84,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             {formatBRL(m.valor)}
           </p>
           <p className="text-xs text-gray-500 whitespace-nowrap">
-            {m.categoria ? `Saldo ${m.categoria}` : "Saldo"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
+            {m.categoria ? `Liberado ${m.categoria}` : "Liberado"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
           </p>
         </div>
       </div>
@@ -95,6 +95,15 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             label={m.situacao === "em_analise" && m.criado_por ? "Reserva · negociação em andamento" : undefined}
           />
           {m.categoria && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: ESPECIAL_COR.fundo, color: ESPECIAL_COR.cor }}>★ {nomeVerba(m.categoria)}</span>}
+          {fila && (
+            <span
+              className="text-xs font-bold rounded-full px-2.5 py-1 whitespace-nowrap"
+              style={{ background: "#072a3c", color: "#ffffff" }}
+              title="Posição na fila de análise: quem solicitou primeiro tem a preferência"
+            >
+              {fila}º na fila
+            </span>
+          )}
           {m.expira_em && <Prazo expiraEm={m.expira_em} />}
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
@@ -102,7 +111,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
       {m.situacao === "expirada" && (
         <p className="text-xs rounded-lg px-3 py-2" style={{ background: "#f1f1f1", color: "#4b5563" }}>
           ⌛ Reserva expirada{m.expirada_em && ` em ${formatDateTime(m.expirada_em)}`}: o prazo de 48h terminou sem
-          aprovação e o valor voltou para o saldo à utilizar.
+          aprovação e o valor voltou para o Liberado.
         </p>
       )}
       {m.observacao && (
@@ -125,7 +134,7 @@ function LinhaMovimento({ m }: { m: Movimento }) {
             Resposta do gestor {m.gestor_nome}
             {m.respondido_em && ` · ${formatDateTime(m.respondido_em)}`}
           </span>
-          {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado e liberado.")}
+          {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado e transmitido.")}
         </p>
       )}
     </li>
@@ -171,7 +180,7 @@ function MinhasSolicitacoes() {
               className="text-xs font-semibold rounded-full px-2.5 py-1"
               style={{ color: SOLIC_STATUS[s.status].cor, background: SOLIC_STATUS[s.status].fundo }}
             >
-              {SOLIC_STATUS[s.status].label}
+              {s.status === "aprovada" ? "Aprovada · transmitida" : SOLIC_STATUS[s.status].label}
             </span>
             {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} compacto />}
           </Link>
@@ -261,7 +270,10 @@ export default function PainelPage() {
   }
 
   const r = detalhe?.resumo.id === segId ? detalhe.resumo : painel?.seguradoras.find((s) => s.id === segId);
-  const movimentos = detalhe?.resumo.id === segId ? detalhe.movimentos : [];
+  // ordem de chegada: o primeiro registro aparece primeiro (quem pede antes tem preferência)
+  const movimentos = detalhe?.resumo.id === segId ? [...detalhe.movimentos].reverse() : [];
+  const fila: Record<string, number> = {};
+  movimentos.filter((m) => m.situacao === "em_analise").forEach((m, i) => (fila[m.id] = i + 1));
   const esp = detalhe?.resumo.id === segId ? (detalhe.especiais ?? []) : [];
 
   return (
@@ -333,7 +345,7 @@ export default function PainelPage() {
                             <span className="min-w-0">
                               <span className="block text-sm font-semibold whitespace-nowrap lg:whitespace-normal">{s.nome}</span>
                               <span className="block text-xs whitespace-nowrap" style={{ color: ativa ? "#d6bd8a" : "#6b7280" }}>
-                                Disponível {formatBRL(s.saldo_a_utilizar)}
+                                Liberado {formatBRL(s.saldo_a_utilizar)}
                               </span>
                               {s.especiais.length > 0 && (
                                 <span
@@ -371,7 +383,7 @@ export default function PainelPage() {
 
                   {r && (
                     <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
                     <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · Automóvel"}</p>
                     <p className="text-2xl">
@@ -389,7 +401,7 @@ export default function PainelPage() {
                     </p>
                   </div>
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: `4px solid ${SITUACAO.aprovada.cor}` }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Liberado</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Transmitido</p>
                     <p className="text-2xl">
                       <Valor v={r.liberado} destaque />
                     </p>
@@ -397,15 +409,29 @@ export default function PainelPage() {
                       ✓ aprovado pelo gestor
                     </p>
                   </div>
-                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #c2a360" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">= Saldo à utilizar</p>
-                    <p className="text-2xl">
-                      <Valor v={r.saldo_a_utilizar} destaque />
-                    </p>
+                  {/* "Liberado" = o que ainda pode ser solicitado; faixa em destaque no topo */}
+                  <div
+                    className="rounded-xl p-5 sm:col-span-3 order-first flex flex-wrap items-center justify-between gap-4"
+                    style={{ background: "#072a3c", border: "2px solid #c2a360", boxShadow: "0 6px 18px rgba(7,42,60,0.25)" }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wider mb-1 font-semibold" style={{ color: "#c2a360" }}>
+                        Liberado
+                      </p>
+                      <p
+                        className="text-3xl sm:text-4xl font-bold tabular-nums whitespace-nowrap"
+                        style={{ color: r.saldo_a_utilizar < 0 ? "#fca5a5" : "#ffffff" }}
+                      >
+                        {formatBRL(r.saldo_a_utilizar)}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: "#d6bd8a" }}>
+                        disponível para novas solicitações · Saldo − Reserva − Transmitido
+                      </p>
+                    </div>
                     <Link
                       href={`/solicitar?seguradora=${r.id}`}
-                      className="inline-block text-xs font-semibold mt-2 underline"
-                      style={{ color: "#072a3c" }}
+                      className="text-sm font-bold rounded-lg px-4 py-2.5 whitespace-nowrap"
+                      style={{ background: "#c2a360", color: "#072a3c" }}
                     >
                       Solicitar nesta seguradora →
                     </Link>
@@ -443,8 +469,8 @@ export default function PainelPage() {
                             {[
                               ["Saldo", e.saldo],
                               ["− Reserva", e.reserva],
-                              ["− Liberado", e.liberado],
-                              ["= Saldo à utilizar", e.saldo_a_utilizar],
+                              ["− Transmitido", e.liberado],
+                              ["= Liberado", e.saldo_a_utilizar],
                             ].map(([rot, v], i) => (
                               <div key={rot as string}>
                                 <dt className="text-xs uppercase tracking-wider text-gray-500">{rot}</dt>
@@ -479,7 +505,7 @@ export default function PainelPage() {
                   ) : (
                     <ul className="flex flex-col divide-y divide-gray-100">
                       {movimentos.map((m) => (
-                        <LinhaMovimento key={m.id} m={m} />
+                        <LinhaMovimento key={m.id} m={m} fila={fila[m.id]} />
                       ))}
                     </ul>
                   )}
@@ -494,8 +520,9 @@ export default function PainelPage() {
               A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
               <strong>Reserva</strong>: solicitações aguardando o gestor, válidas por <strong>48 horas</strong> (se não forem
               aprovadas nesse prazo, expiram e o valor volta para o saldo).{" "}
-              <strong>Liberado</strong>: aprovado pelo gestor (passa da Reserva para cá). <strong>Saldo à utilizar</strong> =
-              Saldo − Reserva − Liberado: o que ainda está livre.
+              <strong>Transmitido</strong>: aprovado pelo gestor (passa da Reserva para cá). <strong>Liberado</strong> =
+              Saldo − Reserva − Transmitido: o que ainda está livre para novas solicitações. As solicitações aparecem por
+              <strong> ordem de chegada</strong>: quem pede primeiro tem a preferência.
             </p>
           </>
         )}

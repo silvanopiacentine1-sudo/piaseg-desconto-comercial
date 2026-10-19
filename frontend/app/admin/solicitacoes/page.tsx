@@ -236,6 +236,8 @@ export default function SolicitacoesPage() {
 
   const doGestor = (lista ?? []).filter((s) => !gestor || s.gestor_id === gestor);
   const visiveis = doGestor.filter((s) => filtro === "todas" || s.status === filtro);
+  // fila de pendentes por ordem de chegada: quem pediu primeiro é analisado primeiro
+  if (filtro === "pendente") visiveis.sort((a, b) => a.numero - b.numero);
   const contagem = (st: StatusSolicitacao | "todas") =>
     st === "todas" ? doGestor.length : doGestor.filter((s) => s.status === st).length;
 
