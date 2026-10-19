@@ -30,6 +30,35 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
   const reservaGestor = s.origem === "gestor" && s.status === "pendente";
   const excede = s.saldo_a_utilizar_atual !== undefined && s.valor > s.saldo_a_utilizar_atual;
 
+  // só admin: devolve uma solicitação expirada para análise com novo prazo de 48h
+  async function reabrir() {
+    setErro("");
+    const motivo = window.prompt(
+      `Reabrir a solicitação #${s.numero} (${formatBRL(s.valor)} · ${s.franqueado}) com novo prazo de 48h?\n\n` +
+        "Informe o motivo (fica no histórico):",
+    );
+    if (motivo === null) return;
+    if (!motivo.trim()) {
+      setErro("Informe o motivo para reabrir.");
+      return;
+    }
+    let operador = getOperador();
+    if (!operador) {
+      operador = window.prompt("Informe seu nome (fica registrado):")?.trim() ?? "";
+      if (!operador) return;
+      localStorage.setItem("desconto_operador", operador);
+    }
+    setEnviando(true);
+    try {
+      await apiJson(`/admin/solicitacoes/${s.id}/reabrir`, { method: "POST", body: JSON.stringify({ operador, motivo }) });
+      onRespondida();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao reabrir");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   async function responder(decisao: "aprovar" | "reprovar") {
     setErro("");
     if (decisao === "reprovar" && !resposta.trim()) {
@@ -80,6 +109,11 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           <p className="text-sm text-gray-600">
             {s.franqueado} → <strong>{s.gestor_nome}</strong>
           </p>
+          {s.cotacao && (
+            <p className="text-sm text-gray-600">
+              Cotação nº <strong style={{ color: "#072a3c" }}>{s.cotacao}</strong>
+            </p>
+          )}
           <p className="text-xs text-gray-400">
             {s.origem === "gestor"
               ? `Registrada por ${s.criado_por} · pedido via ${s.canal} · ${formatDateTime(s.created_at)}`
@@ -114,6 +148,15 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
         <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#f1f1f1", color: "#4b5563" }}>
           ⌛ Expirou{s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} — o prazo de 48h terminou sem aprovação e o
           valor voltou para o saldo à utilizar. Fica registrado aqui como evidência.
+          <button
+            onClick={reabrir}
+            disabled={enviando}
+            className="block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white cursor-pointer disabled:opacity-60"
+            style={{ background: "#2a78d6" }}
+          >
+            ↺ Reabrir solicitação (+48h)
+          </button>
+          {erro && <span className="block text-xs text-red-600 mt-1">{erro}</span>}
         </p>
       )}
 

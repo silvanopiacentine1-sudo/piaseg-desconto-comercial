@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -289,6 +289,20 @@ class SolicitacaoIn(BaseModel):
     gestor_id: str
     observacao: str = ""
     categoria: str = ""  # verba geral ("") ou desconto especial
+    cotacao: str = ""  # número da cotação (obrigatório)
+
+
+def _campos_obrigatorios(body: "SolicitacaoIn") -> tuple[str, str]:
+    """Número da cotação e justificativa são obrigatórios em toda solicitação."""
+    cotacao = " ".join(body.cotacao.split())
+    justificativa = body.observacao.strip()
+    if not cotacao:
+        raise HTTPException(400, "Informe o número da cotação")
+    if len(cotacao) > 40:
+        raise HTTPException(400, "Número da cotação muito longo (máx. 40 caracteres)")
+    if not justificativa:
+        raise HTTPException(400, "Informe a justificativa")
+    return cotacao, justificativa
 
 
 CANAIS = ("WhatsApp", "Telefone", "E-mail", "Presencial", "Outro")
@@ -581,7 +595,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
         itens.append({
             "id": s["id"], "origem": "solicitacao", "tipo": "solicitacao", "situacao": situacao, "numero": s["numero"],
             "data": _sol_data(s), "ordem": s["created_at"], "valor": v / 100, "efeito_c": efeito,
-            "franqueado": s["franqueado"], "observacao": s.get("observacao", ""),
+            "franqueado": s["franqueado"], "observacao": s.get("observacao", ""), "cotacao": s.get("cotacao", ""),
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
@@ -990,6 +1004,7 @@ def create_solicitacao(body: SolicitacaoIn):
     franqueado = body.franqueado.strip()
     if not franqueado:
         raise HTTPException(400, "Informe o franqueado")
+    cotacao, justificativa = _campos_obrigatorios(body)
     with _lock:
         seguradoras = _load(SEGURADORAS_FILE)
         seg = next((s for s in seguradoras if s["id"] == body.seguradora_id and s.get("ativa", True)), None)
@@ -1007,7 +1022,8 @@ def create_solicitacao(body: SolicitacaoIn):
             "valor_centavos": _cents(body.valor),
             "franqueado": franqueado,
             "gestor_id": body.gestor_id,
-            "observacao": body.observacao.strip(),
+            "observacao": justificativa,
+            "cotacao": cotacao,
             "status": "pendente",
             "data": _hoje_sp(),
             "created_at": now_iso(),
@@ -1060,6 +1076,8 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
     if aprovar:
         lancamentos = _load(LANCAMENTOS_FILE)
         descricao = f'Solicitação #{s["numero"]}'
+        if s.get("cotacao"):
+            descricao += f' · Cotação {s["cotacao"]}'
         if s.get("observacao"):
             descricao += f' — {s["observacao"]}'
         lanc = {
@@ -1096,6 +1114,7 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
     franqueado = body.franqueado.strip()
     if not franqueado:
         raise HTTPException(400, "Informe o franqueado")
+    cotacao, justificativa = _campos_obrigatorios(body)
     canal = body.canal if body.canal in CANAIS else "Outro"
     with _lock:
         seguradoras = _load(SEGURADORAS_FILE)
@@ -1113,7 +1132,8 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
             "valor_centavos": _cents(body.valor),
             "franqueado": franqueado,
             "gestor_id": body.gestor_id,
-            "observacao": body.observacao.strip(),
+            "observacao": justificativa,
+            "cotacao": cotacao,
             "status": "pendente",
             "data": _hoje_sp(),
             "created_at": now_iso(),
@@ -1151,6 +1171,48 @@ def limpar_treinamento(_: None = Depends(require_admin)):
         if removidos["lancamentos"]:
             _save(LANCAMENTOS_FILE, lanc_fica)
     return removidos
+
+
+@app.post("/admin/solicitacoes/{sol_id}/reabrir")
+def reabrir_solicitacao(sol_id: str, body: AcaoOperador, _: None = Depends(require_admin)):
+    """Volta uma solicitação EXPIRADA para análise com novo prazo de 48h
+    (caso precise de mais tempo). Fica registrado quem reabriu e o motivo."""
+    operador = _operador(body.operador)
+    motivo = body.motivo.strip()
+    if not motivo:
+        raise HTTPException(400, "Informe o motivo para reabrir")
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        if s["status"] != "expirada":
+            raise HTTPException(400, "Só é possível reabrir uma solicitação expirada")
+        agora = now_iso()
+        s["status"] = "pendente"
+        s["expira_em"] = _expira_em(agora)
+        s["reaberta_em"] = agora
+        s["reaberta_por"] = operador
+        s.pop("expirada_em", None)
+        _evento(s, "reaberta", operador, f"Novo prazo de {PRAZO_RESERVA_H}h. Motivo: {motivo}", em=agora)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
+# Manutenção pontual: zera créditos/reservas/solicitações (dados de teste),
+# mantendo seguradoras, logos e gestores. Só funciona com o token da env var
+# MANUTENCAO_TOKEN configurada no servidor — sem ela, a rota nem existe (404).
+@app.post("/admin/manutencao/zerar-movimentos")
+def zerar_movimentos(x_manutencao: str = Header(default="")):
+    token = os.getenv("MANUTENCAO_TOKEN", "")
+    if not token or x_manutencao != token:
+        raise HTTPException(404, "Not Found")
+    with _lock:
+        backup = _snapshot("antes-zerar-movimentos-") if os.getenv("DATA_DIR") else None
+        antes = {"lancamentos": len(_load(LANCAMENTOS_FILE)), "solicitacoes": len(_load(SOLICITACOES_FILE))}
+        _save(LANCAMENTOS_FILE, [])
+        _save(SOLICITACOES_FILE, [])
+    return {"apagados": antes, "backup": backup}
 
 
 @app.post("/admin/solicitacoes/{sol_id}/responder")

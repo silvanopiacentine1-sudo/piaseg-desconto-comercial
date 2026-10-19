@@ -70,6 +70,7 @@ function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
           <p className="text-xs text-gray-500">
             {formatDate(m.data)}
             {m.numero && ` · Solicitação #${m.numero}`}
+            {m.cotacao && ` · Cotação ${m.cotacao}`}
             {m.gestor_nome && !m.criado_por && ` · para ${m.gestor_nome}`}
             {m.criado_por && ` · pedido via ${m.canal}, reservado pelo gestor ${m.gestor_nome}`}
             {m.origem === "lancamento" && m.situacao !== "credito" && m.descricao && ` · ${m.descricao}`}

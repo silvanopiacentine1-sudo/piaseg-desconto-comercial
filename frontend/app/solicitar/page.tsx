@@ -24,6 +24,7 @@ function Formulario() {
   const [franqueado, setFranqueado] = useState("");
   const [gestorId, setGestorId] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [cotacao, setCotacao] = useState("");
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
 
@@ -72,6 +73,7 @@ function Formulario() {
           franqueado,
           gestor_id: gestorId,
           observacao,
+          cotacao,
           categoria: esp ? verba : "",
         }),
       });
@@ -212,13 +214,26 @@ function Formulario() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Observação / justificativa</label>
+            <label className="block text-sm font-medium mb-1">Número da cotação *</label>
+            <input
+              value={cotacao}
+              onChange={(e) => setCotacao(e.target.value)}
+              placeholder="Ex.: 123456789"
+              maxLength={40}
+              className={input}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Justificativa *</label>
             <textarea
               value={observacao}
               onChange={(e) => setObservacao(e.target.value)}
               rows={4}
               placeholder="Ex.: cliente com frota de 10 veículos, concorrência ofereceu 15% abaixo..."
               className={input}
+              required
             />
           </div>
 

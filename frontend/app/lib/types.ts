@@ -98,6 +98,7 @@ export interface Movimento {
   respondido_em?: string | null;
   expira_em?: string | null;
   expirada_em?: string | null;
+  cotacao?: string;
 }
 
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
@@ -175,6 +176,7 @@ export interface Solicitacao {
   expira_em?: string;
   expirada_em?: string;
   historico?: EventoHistorico[];
+  cotacao?: string;
 }
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {

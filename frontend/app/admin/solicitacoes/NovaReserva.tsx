@@ -24,6 +24,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
   const [canal, setCanal] = useState("WhatsApp");
   const [gestorId, setGestorId] = useState("");
   const [observacao, setObservacao] = useState("");
+  const [cotacao, setCotacao] = useState("");
   const [aprovar, setAprovar] = useState(true);
   const [resposta, setResposta] = useState("");
   const [erro, setErro] = useState("");
@@ -76,7 +77,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
         method: "POST",
         body: JSON.stringify({
           seguradora_id: segId, valor: v, franqueado, gestor_id: gestorId,
-          observacao, canal, aprovar, resposta, operador, categoria: esp ? verba : "",
+          observacao, cotacao, canal, aprovar, resposta, operador, categoria: esp ? verba : "",
         }),
       });
       onCriada(
@@ -185,14 +186,26 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
               ))}
           </select>
         </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Número da cotação *</label>
+          <input
+            value={cotacao}
+            onChange={(e) => setCotacao(e.target.value)}
+            placeholder="Ex.: 123456789"
+            maxLength={40}
+            className={input}
+            required
+          />
+        </div>
         <div className="sm:col-span-2">
-          <label className="block text-sm font-medium mb-1">Justificativa do franqueado</label>
+          <label className="block text-sm font-medium mb-1">Justificativa do franqueado *</label>
           <textarea
             value={observacao}
             onChange={(e) => setObservacao(e.target.value)}
             rows={2}
             placeholder="O que o franqueado explicou no WhatsApp (cliente, negócio...)"
             className={input}
+            required
           />
         </div>
       </div>
