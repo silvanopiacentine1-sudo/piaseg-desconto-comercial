@@ -67,7 +67,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
     }
     if (decisao === "aprovar" && excede) {
       const ok = window.confirm(
-        `O valor (${formatBRL(s.valor)}) é maior que o saldo à utilizar de ${s.seguradora_nome} ` +
+        `O valor (${formatBRL(s.valor)}) é maior que o Liberado de ${s.seguradora_nome} ` +
           `(${formatBRL(s.saldo_a_utilizar_atual!)}). O saldo vai ficar negativo. Aprovar mesmo assim?`,
       );
       if (!ok) return;
@@ -147,7 +147,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       {s.status === "expirada" && (
         <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#f1f1f1", color: "#4b5563" }}>
           ⌛ Expirou{s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} — o prazo de 48h terminou sem aprovação e o
-          valor voltou para o saldo à utilizar. Fica registrado aqui como evidência.
+          valor voltou para o Liberado. Fica registrado aqui como evidência.
           <button
             onClick={reabrir}
             disabled={enviando}
@@ -180,9 +180,9 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       {s.status === "expirada" ? null : s.status === "pendente" ? (
         <>
           <p className="text-xs mb-2" style={{ color: excede ? "#b42318" : "#555" }}>
-            Saldo à utilizar hoje em {s.seguradora_nome}
+            Liberado hoje em {s.seguradora_nome}
             {s.categoria ? ` (desconto especial ${s.categoria})` : ""}: <strong>{formatBRL(s.saldo_a_utilizar_atual ?? 0)}</strong>
-            {excede && " — valor solicitado excede o disponível"}
+            {excede && " — valor solicitado excede o Liberado"}
           </p>
           <textarea
             value={resposta}
@@ -203,7 +203,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer disabled:opacity-60"
               style={{ background: "#1f7a4d" }}
             >
-              {reservaGestor ? "✓ Negócio fechado — aprovar e liberar" : "✓ Aprovar e liberar"}
+              {reservaGestor ? "✓ Negócio fechado — aprovar e transmitir" : "✓ Aprovar e transmitir"}
             </button>
             <button
               onClick={() => responder("reprovar")}

@@ -63,7 +63,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
       setErro("Informe um valor válido maior que zero (ex.: 1.500,00).");
       return;
     }
-    if (excede && !window.confirm(`O valor passa do saldo à utilizar de ${seg!.nome} (${formatBRL(seg!.saldo_a_utilizar)}). Continuar?`))
+    if (excede && !window.confirm(`O valor passa do Liberado de ${seg!.nome}${esp ? ` (${esp.categoria})` : ""} (${formatBRL(disponivel)}). Continuar?`))
       return;
     let operador = getOperador();
     if (!operador) {
@@ -82,7 +82,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
       });
       onCriada(
         aprovar
-          ? `Reserva #${s.numero} de ${formatBRL(v)} para ${franqueado} criada e liberada. Já aparece no painel do franqueado.`
+          ? `Reserva #${s.numero} de ${formatBRL(v)} para ${franqueado} aprovada e transmitida. Já aparece no painel do franqueado.`
           : `Reserva #${s.numero} de ${formatBRL(v)} para ${franqueado} feita. Quando o negócio fechar, aprove em Pendentes.`,
       );
     } catch (e) {
@@ -120,14 +120,14 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
             <option value="">Selecione...</option>
             {seguradoras.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.nome} — disponível {formatBRL(s.saldo_a_utilizar)}
+                {s.nome} — liberado {formatBRL(s.saldo_a_utilizar)}
               </option>
             ))}
           </select>
           {seg && (
             <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
               <Logo nome={seg.nome} url={seg.logo_url} size={24} />
-              Saldo à utilizar agora{esp ? ` (${esp.categoria})` : ""}:{" "}
+              Liberado agora{esp ? ` (${esp.categoria})` : ""}:{" "}
               <strong style={{ color: "#072a3c" }}>{formatBRL(disponivel)}</strong>
             </div>
           )}
@@ -135,10 +135,10 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
             <div className="mt-3">
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — liberado {formatBRL(seg!.saldo_a_utilizar)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
-                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
+                    ★ Desconto especial: {e.categoria} — liberado {formatBRL(e.saldo_a_utilizar)}
                   </option>
                 ))}
               </select>
@@ -163,7 +163,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
         <div>
           <label className="block text-sm font-medium mb-1">Valor (R$) *</label>
           <input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className={input} required />
-          {excede && <p className="text-xs text-amber-700 mt-1">Maior que o saldo à utilizar desta seguradora.</p>}
+          {excede && <p className="text-xs text-amber-700 mt-1">Maior que o Liberado desta seguradora.</p>}
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Pedido recebido por</label>
@@ -216,8 +216,8 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
           {[
             {
               v: true,
-              titulo: "✓ Já aprovar e liberar agora",
-              texto: "Negócio fechado: o valor vai direto para Liberado.",
+              titulo: "✓ Já aprovar e transmitir agora",
+              texto: "Negócio fechado: o valor vai direto para Transmitido.",
               cor: "#1f7a4d",
               fundo: "#e8f3ec",
             },
@@ -267,7 +267,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
         className="mt-4 rounded-lg px-5 py-2.5 font-semibold text-white cursor-pointer disabled:opacity-60"
         style={{ background: aprovar ? "#1f7a4d" : "#8a6a1f" }}
       >
-        {enviando ? "Salvando..." : aprovar ? "✓ Aprovar e liberar" : "◷ Fazer a reserva"}
+        {enviando ? "Salvando..." : aprovar ? "✓ Aprovar e transmitir" : "◷ Fazer a reserva"}
       </button>
     </form>
   );

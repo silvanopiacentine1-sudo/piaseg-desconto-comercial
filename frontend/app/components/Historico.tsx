@@ -3,7 +3,7 @@ import { formatDateTime } from "../lib/types";
 
 const ROTULO: Record<string, { txt: string; cor: string }> = {
   criada: { txt: "Pedido registrado", cor: "#072a3c" },
-  aprovada: { txt: "Aprovada e liberada", cor: "#1f7a4d" },
+  aprovada: { txt: "Aprovada e transmitida", cor: "#1f7a4d" },
   reprovada: { txt: "Não aprovada", cor: "#b42318" },
   expirada: { txt: "Expirada (prazo de 48h)", cor: "#6b7280" },
   reaberta: { txt: "Reaberta pelo admin (+48h)", cor: "#2a78d6" },

@@ -131,7 +131,7 @@ def _evento(obj: dict, tipo: str, por: str, detalhe: str = "", em: Optional[str]
 def _expirar_vencidas() -> int:
     """Expira reservas com prazo vencido. Seguro chamar a qualquer momento."""
     agora = datetime.now(timezone.utc)
-    msg = f"Prazo de {PRAZO_RESERVA_H}h encerrado sem aprovação — o valor voltou para o saldo à utilizar."
+    msg = f"Prazo de {PRAZO_RESERVA_H}h encerrado sem aprovação — o valor voltou para o Liberado."
     with _lock:
         solicitacoes = _load(SOLICITACOES_FILE)
         lancamentos = _load(LANCAMENTOS_FILE)
@@ -1489,7 +1489,7 @@ def export_excel(_: None = Depends(require_admin)):
 
     ws = wb.active
     ws.title = "Saldos"
-    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Liberado", "Saldo à utilizar"])
+    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Transmitido", "Liberado"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
         ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["liberado"], r["saldo_a_utilizar"]])
     for row in ws.iter_rows(min_row=2, min_col=3, max_col=6):

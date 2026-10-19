@@ -122,9 +122,9 @@ export default function AdminPage() {
                   <th className="px-4 py-3 font-semibold">Seguradora</th>
                   <th className="px-4 py-3 font-semibold text-right">Saldo</th>
                   <th className="px-4 py-3 font-semibold text-right">Reserva</th>
-                  <th className="px-4 py-3 font-semibold text-right">Liberado</th>
+                  <th className="px-4 py-3 font-semibold text-right">Transmitido</th>
                   <th className="px-4 py-3 font-semibold text-right" style={{ color: "#d6bd8a" }}>
-                    Saldo à utilizar
+                    Liberado
                   </th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -140,7 +140,7 @@ export default function AdminPage() {
                       {!l.ativa && <span className="ml-2 text-xs text-gray-500">(inativa — fora do painel)</span>}
                       {(l.especiais ?? []).map((e) => (
                         <span key={e.categoria} className="block text-xs font-semibold mt-1" style={{ color: "#9a3412" }}>
-                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · à utilizar {formatBRL(e.saldo_a_utilizar)}
+                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · liberado {formatBRL(e.saldo_a_utilizar)}
                         </span>
                       ))}
                     </td>

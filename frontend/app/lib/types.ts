@@ -181,7 +181,7 @@ export interface Solicitacao {
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
   pendente: { label: "Aguardando análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
-  aprovada: { label: "Aprovada · liberada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  aprovada: { label: "Aprovada · transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
   expirada: { label: "Expirada · prazo de 48h", cor: "#6b7280", fundo: "#f1f1f1" },
 };

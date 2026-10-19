@@ -150,7 +150,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       : (resumo?.saldo_a_utilizar ?? 0);
     if (tipo !== "credito" && resumo && v > disp) {
       const ok = window.confirm(
-        `Atenção: ${formatBRL(v)} é maior que o saldo à utilizar${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
+        `Atenção: ${formatBRL(v)} é maior que o Liberado${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
           "O saldo vai ficar negativo. Deseja lançar mesmo assim?",
       );
       if (!ok) return;
@@ -218,7 +218,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
     setAviso("");
     const textos = {
       utilizar: `Baixar a reserva de ${formatBRL(l.valor)} como UTILIZADA? O valor sai do saldo.`,
-      cancelar: `Cancelar a reserva de ${formatBRL(l.valor)}? O valor volta a ficar disponível.`,
+      cancelar: `Cancelar a reserva de ${formatBRL(l.valor)}? O valor volta para o Liberado.`,
       estornar: `Estornar este lançamento de ${formatBRL(l.valor)}? Ele deixa de contar no saldo (continua no extrato como estornado).`,
     };
     let motivo = "";
@@ -362,8 +362,8 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <Card label="Saldo (verba do mês)" v={resumo.saldo} />
               <Card label="− Reserva" v={resumo.reserva} />
-              <Card label="− Liberado" v={resumo.liberado} />
-              <Card label="= Saldo à utilizar" v={resumo.saldo_a_utilizar} destaque />
+              <Card label="− Transmitido" v={resumo.liberado} />
+              <Card label="= Liberado" v={resumo.saldo_a_utilizar} destaque />
             </div>
             {especiais.length > 0 && (
               <div className="mb-8 -mt-4">
@@ -387,10 +387,10 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                         − Reserva <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>
                       </span>
                       <span>
-                        − Liberado <strong className="tabular-nums">{formatBRL(e.liberado)}</strong>
+                        − Transmitido <strong className="tabular-nums">{formatBRL(e.liberado)}</strong>
                       </span>
                       <span>
-                        = À utilizar{" "}
+                        = Liberado{" "}
                         <strong className="tabular-nums" style={{ color: e.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}>
                           {formatBRL(e.saldo_a_utilizar)}
                         </strong>
@@ -639,7 +639,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                                   : { color: "#8a6a1f", background: "#fbf3e0" }
                               }
                             >
-                              {l.solicitacao_id ? "✓ Liberado (aprovado pelo gestor)" : "Reserva manual"}
+                              {l.solicitacao_id ? "✓ Transmitido (aprovado pelo gestor)" : "Reserva manual"}
                             </span>
                             {!l.solicitacao_id && l.expira_em && (
                               <span className="ml-2 align-middle">
