@@ -1138,7 +1138,11 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str, ressalva: boo
     tipo_ev = ("aprovada_ressalva" if ressalva else "aprovada") if aprovar else "reprovada"
     detalhe_ev = resposta
     if aprovar and ressalva and valor_aprovado_c and valor_aprovado_c != s["valor_centavos"]:
-        detalhe_ev = f"Valor aprovado R$ {valor_aprovado_c / 100:.2f} de R$ {s['valor_centavos'] / 100:.2f} solicitados. {resposta}"
+        dif = valor_aprovado_c - s["valor_centavos"]
+        efeito = (f"R$ {dif / 100:.2f} a mais saíram do Disponível" if dif > 0
+                  else f"R$ {-dif / 100:.2f} voltaram para o Disponível")
+        detalhe_ev = (f"Valor aprovado R$ {valor_aprovado_c / 100:.2f} (solicitado R$ {s['valor_centavos'] / 100:.2f}; "
+                      f"{efeito}). {resposta}")
     _evento(s, tipo_ev, operador, detalhe_ev, em=agora)
     s["resposta"] = resposta
     s["respondido_por"] = operador
@@ -1346,10 +1350,11 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
         if body.decisao == "ressalva":
             if not resposta:
                 raise HTTPException(400, "Escreva a ressalva para o franqueado")
-            pedido_c = s["valor_centavos"]
-            valor_c = _cents(body.valor_aprovado) if body.valor_aprovado else pedido_c
-            if valor_c <= 0 or valor_c > pedido_c:
-                raise HTTPException(400, "O valor aprovado deve ser maior que zero e no máximo o valor solicitado")
+            # valor aprovado é obrigatório e pode ser MAIOR ou MENOR que o pedido:
+            # maior → a diferença sai do Disponível; menor → a diferença volta para o Disponível
+            if not body.valor_aprovado or _cents(body.valor_aprovado) <= 0:
+                raise HTTPException(400, "Informe o valor aprovado")
+            valor_c = _cents(body.valor_aprovado)
             _decidir(s, True, resposta, operador, ressalva=True, valor_aprovado_c=valor_c)
         else:
             _decidir(s, body.decisao == "aprovar", resposta, operador)

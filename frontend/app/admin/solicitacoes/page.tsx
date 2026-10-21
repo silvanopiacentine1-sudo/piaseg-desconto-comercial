@@ -105,16 +105,23 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
         setErro("Escreva a ressalva para o franqueado (campo de resposta acima).");
         return;
       }
-      if (valorRessalva.trim()) {
-        const v = parseValor(valorRessalva);
-        if (!Number.isFinite(v) || v <= 0 || v > s.valor) {
-          setErro(`O valor aprovado deve ser maior que zero e no máximo ${formatBRL(s.valor)}.`);
-          return;
-        }
-        valor_aprovado = v;
+      const v = parseValor(valorRessalva);
+      if (!Number.isFinite(v) || v <= 0) {
+        setErro("Informe o valor aprovado (obrigatório na aprovação com ressalva).");
+        return;
+      }
+      valor_aprovado = v;
+      // passa do Disponível? (o próprio pedido já está na Reserva, por isso entra no cálculo)
+      const disp = s.saldo_a_utilizar_atual ?? 0;
+      if (v > disp) {
+        const ok = window.confirm(
+          `O valor aprovado (${formatBRL(v)}) é maior que o Disponível de ${s.seguradora_nome} (${formatBRL(disp)}). ` +
+            "O saldo vai ficar negativo. Aprovar mesmo assim?",
+        );
+        if (!ok) return;
       }
     }
-    if (decisao !== "reprovar" && excede && !valor_aprovado) {
+    if (decisao === "aprovar" && excede) {
       const ok = window.confirm(
         `O valor (${formatBRL(s.valor)}) é maior que o Disponível de ${s.seguradora_nome} ` +
           `(${formatBRL(s.saldo_a_utilizar_atual!)}). O saldo vai ficar negativo. Aprovar mesmo assim?`,
@@ -292,20 +299,38 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           {modoRessalva && (
             <div className="mt-3 rounded-lg p-3 flex flex-col gap-2" style={{ background: "#fff4dc", border: "1px solid #e9c46a" }}>
               <p className="text-xs" style={{ color: "#9a5b00" }}>
-                Aprova com uma condição. A <strong>ressalva</strong> (texto acima) é obrigatória e aparece para o franqueado.
-                Se quiser, aprove um <strong>valor menor</strong> que o pedido.
+                Aprova com uma condição. A <strong>ressalva</strong> (texto acima) e o <strong>valor aprovado</strong> são
+                obrigatórios. Se o valor for <strong>maior</strong> que o pedido, a diferença sai do Disponível; se for{" "}
+                <strong>menor</strong>, a diferença volta para o Disponível.
               </p>
               <label className="text-sm font-medium flex flex-wrap items-center gap-2">
-                Valor aprovado (R$)
+                Valor aprovado (R$) *
                 <input
                   value={valorRessalva}
                   onChange={(e) => setValorRessalva(e.target.value)}
                   inputMode="decimal"
-                  placeholder={formatBRL(s.valor).replace("R$", "").trim()}
+                  placeholder="0,00"
                   className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white w-40"
+                  required
                 />
-                <span className="text-xs text-gray-500">em branco = valor pedido ({formatBRL(s.valor)})</span>
+                <span className="text-xs text-gray-500">solicitado: {formatBRL(s.valor)}</span>
               </label>
+              {(() => {
+                const v = parseValor(valorRessalva);
+                if (!Number.isFinite(v) || v <= 0) return null;
+                const dif = v - s.valor;
+                if (Math.abs(dif) < 0.005)
+                  return <p className="text-xs text-gray-600">Mesmo valor do pedido — o Disponível não muda.</p>;
+                return dif > 0 ? (
+                  <p className="text-xs font-semibold" style={{ color: "#b42318" }}>
+                    ▲ {formatBRL(dif)} acima do pedido — essa diferença sai do Disponível.
+                  </p>
+                ) : (
+                  <p className="text-xs font-semibold" style={{ color: "#1f7a4d" }}>
+                    ▼ {formatBRL(-dif)} abaixo do pedido — essa diferença volta para o Disponível.
+                  </p>
+                );
+              })()}
               <div>
                 <button
                   onClick={() => responder("ressalva")}

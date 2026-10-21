@@ -147,7 +147,7 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
           </p>
           {m.valor_solicitado && (
             <p className="text-xs whitespace-nowrap" style={{ color: RESSALVA_COR.cor }}>
-              aprovado de {formatBRL(m.valor_solicitado)} solicitados
+              solicitado {formatBRL(m.valor_solicitado)} · aprovado com ressalva
             </p>
           )}
           <p className="text-xs text-gray-500 whitespace-nowrap">
