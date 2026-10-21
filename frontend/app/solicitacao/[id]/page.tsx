@@ -11,8 +11,8 @@ import Prazo from "../../components/Prazo";
 import { SOLIC_STATUS, formatBRL, formatDateTime, type Solicitacao } from "../../lib/types";
 
 const RESERVA_TEXTO: Record<string, string> = {
-  aberta: "Valor reservado — aguardando utilização.",
-  utilizada: "Desconto já utilizado.",
+  aberta: "Aprovado — falta marcar a proposta como transmitida.",
+  utilizada: "✓ Proposta transmitida.",
   cancelada: "Reserva cancelada pela equipe Piaseg.",
   estornada: "Reserva estornada pela equipe Piaseg.",
 };
@@ -62,7 +62,7 @@ function Detalhe({ id }: { id: string }) {
             Solicitação #{s.numero}
           </h1>
           <span className="text-sm font-semibold rounded-full px-3 py-1" style={{ color: st.cor, background: st.fundo }}>
-            {s.status === "aprovada" ? "Aprovada · transmitida" : st.label}
+            {s.status === "aprovada" && s.reserva_status === "utilizada" ? "✓ Proposta transmitida" : st.label}
           </span>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
@@ -109,6 +109,21 @@ function Detalhe({ id }: { id: string }) {
         {s.status === "aprovada" && s.reserva_status && (
           <p className="text-sm text-gray-600 mt-3">{RESERVA_TEXTO[s.reserva_status]}</p>
         )}
+        {s.status === "aprovada" && s.reserva_status === "aberta" && (
+          <button
+            onClick={async () => {
+              if (!window.confirm("Confirma que a proposta foi transmitida para a seguradora? O valor sai de Aprovado e vai para Transmitido.")) return;
+              const r = await fetch(`${API}/solicitacoes/${s.id}/transmitida`, { method: "POST" });
+              if (r.ok) carregar();
+              else window.alert((await r.json().catch(() => ({}))).detail ?? "Não foi possível marcar.");
+            }}
+            className="mt-3 inline-flex items-center gap-2 text-sm font-semibold rounded-lg px-3 py-1.5 cursor-pointer"
+            style={{ background: "#ffffff", color: "#1f7a4d", border: "2px solid #1f7a4d" }}
+          >
+            <span className="inline-block w-5 h-5 rounded border-2" style={{ borderColor: "#1f7a4d" }} aria-hidden />
+            Proposta transmitida
+          </button>
+        )}
         {s.status === "pendente" && (
           <div className="mt-4 flex flex-col gap-2">
             {s.expira_em && (
@@ -126,7 +141,7 @@ function Detalhe({ id }: { id: string }) {
           <p className="text-sm rounded-lg px-3 py-2 mt-4" style={{ background: "#f1f1f1", color: "#4b5563" }}>
             ⌛ Esta reserva <strong>expirou</strong>
             {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`}: o prazo de 48h terminou sem aprovação e o valor voltou
-            para o Liberado. Se ainda precisar do desconto, faça uma nova solicitação.
+            para o Disponível. Se ainda precisar do desconto, faça uma nova solicitação.
           </p>
         )}
         {s.historico && s.historico.length > 0 && (

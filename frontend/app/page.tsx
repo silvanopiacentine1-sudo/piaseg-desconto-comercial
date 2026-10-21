@@ -53,7 +53,67 @@ function Badge({ situacao, label }: { situacao: Movimento["situacao"]; label?: s
   );
 }
 
-function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
+function PropostaTransmitida({ m, onMudou }: { m: Movimento; onMudou: () => void }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  if (m.situacao === "aprovada_utilizada") {
+    return (
+      <span
+        className="inline-flex items-center gap-2 text-sm font-semibold rounded-lg px-3 py-1.5"
+        style={{ background: "#e8f3ec", color: "#1f7a4d", border: "1px solid #b7e0c6" }}
+      >
+        <span
+          className="inline-flex items-center justify-center w-5 h-5 rounded"
+          style={{ background: "#1f7a4d", color: "#fff" }}
+          aria-hidden
+        >
+          ✓
+        </span>
+        Proposta transmitida
+        {m.transmitida_em && <span className="font-normal text-xs"> · {formatDateTime(m.transmitida_em)}</span>}
+      </span>
+    );
+  }
+  if (!m.pode_transmitir) return null;
+
+  async function marcar() {
+    const ok = window.confirm(
+      `Confirma que a proposta ${m.cotacao ? `da cotação ${m.cotacao} ` : ""}(${formatBRL(m.valor)} · ${m.franqueado}) ` +
+        "foi transmitida para a seguradora?\n\nO valor sai de Aprovado e vai para Transmitido.",
+    );
+    if (!ok) return;
+    setEnviando(true);
+    setErro("");
+    try {
+      const r = await fetch(`${API}/solicitacoes/${m.id}/transmitida`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "Erro");
+      onMudou();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao marcar");
+    } finally {
+      setEnviando(false); // não deixa o botão preso em "Marcando..." (ex.: se o admin desfizer depois)
+    }
+  }
+
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <button
+        onClick={marcar}
+        disabled={enviando}
+        className="inline-flex items-center gap-2 text-sm font-semibold rounded-lg px-3 py-1.5 cursor-pointer disabled:opacity-60"
+        style={{ background: "#ffffff", color: "#1f7a4d", border: "2px solid #1f7a4d" }}
+        title="Clique quando a proposta for transmitida para a seguradora"
+      >
+        <span className="inline-block w-5 h-5 rounded border-2" style={{ borderColor: "#1f7a4d" }} aria-hidden />
+        {enviando ? "Marcando..." : "Proposta transmitida"}
+      </button>
+      {erro && <span className="text-xs text-red-600">{erro}</span>}
+    </span>
+  );
+}
+
+function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onMudou: () => void }) {
   const s = SITUACAO[m.situacao];
   const titulo =
     m.situacao === "credito"
@@ -85,7 +145,7 @@ function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
             {formatBRL(m.valor)}
           </p>
           <p className="text-xs text-gray-500 whitespace-nowrap">
-            {m.categoria ? `Liberado ${m.categoria}` : "Liberado"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
+            {m.categoria ? `Disponível ${m.categoria}` : "Disponível"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
           </p>
         </div>
       </div>
@@ -109,10 +169,15 @@ function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
       </div>
+      {m.origem === "solicitacao" && (m.pode_transmitir || m.situacao === "aprovada_utilizada") && (
+        <div>
+          <PropostaTransmitida m={m} onMudou={onMudou} />
+        </div>
+      )}
       {m.situacao === "expirada" && (
         <p className="text-xs rounded-lg px-3 py-2" style={{ background: "#f1f1f1", color: "#4b5563" }}>
           ⌛ Reserva expirada{m.expirada_em && ` em ${formatDateTime(m.expirada_em)}`}: o prazo de 48h terminou sem
-          aprovação e o valor voltou para o Liberado.
+          aprovação e o valor voltou para o Disponível.
         </p>
       )}
       {m.observacao && (
@@ -135,7 +200,7 @@ function LinhaMovimento({ m, fila }: { m: Movimento; fila?: number }) {
             Resposta do gestor {m.gestor_nome}
             {m.respondido_em && ` · ${formatDateTime(m.respondido_em)}`}
           </span>
-          {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado e transmitido.")}
+          {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado.")}
         </p>
       )}
     </li>
@@ -181,7 +246,9 @@ function MinhasSolicitacoes() {
               className="text-xs font-semibold rounded-full px-2.5 py-1"
               style={{ color: SOLIC_STATUS[s.status].cor, background: SOLIC_STATUS[s.status].fundo }}
             >
-              {s.status === "aprovada" ? "Aprovada · transmitida" : SOLIC_STATUS[s.status].label}
+              {s.status === "aprovada" && s.reserva_status === "utilizada"
+                ? "✓ Proposta transmitida"
+                : SOLIC_STATUS[s.status].label}
             </span>
             {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} compacto />}
           </Link>
@@ -346,7 +413,7 @@ export default function PainelPage() {
                             <span className="min-w-0">
                               <span className="block text-sm font-semibold whitespace-nowrap lg:whitespace-normal">{s.nome}</span>
                               <span className="block text-xs whitespace-nowrap" style={{ color: ativa ? "#d6bd8a" : "#6b7280" }}>
-                                Liberado {formatBRL(s.saldo_a_utilizar)}
+                                Disponível {formatBRL(s.saldo_a_utilizar)}
                               </span>
                               {s.especiais.length > 0 && (
                                 <span
@@ -384,7 +451,7 @@ export default function PainelPage() {
 
                   {r && (
                     <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
                     <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · Automóvel"}</p>
                     <p className="text-2xl">
@@ -402,22 +469,31 @@ export default function PainelPage() {
                     </p>
                   </div>
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: `4px solid ${SITUACAO.aprovada.cor}` }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Transmitido</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Aprovado</p>
                     <p className="text-2xl">
-                      <Valor v={r.liberado} destaque />
+                      <Valor v={r.aprovado} destaque />
                     </p>
                     <p className="text-xs mt-1" style={{ color: SITUACAO.aprovada.cor }}>
-                      ✓ aprovado pelo gestor
+                      ✓ aprovado · aguardando transmissão
                     </p>
                   </div>
-                  {/* "Liberado" = o que ainda pode ser solicitado; faixa em destaque no topo */}
+                  <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: `4px solid ${SITUACAO.aprovada_utilizada.cor}` }}>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">− Transmitido</p>
+                    <p className="text-2xl">
+                      <Valor v={r.transmitido} destaque />
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: SITUACAO.aprovada_utilizada.cor }}>
+                      ✓ proposta transmitida
+                    </p>
+                  </div>
+                  {/* "Disponível" = o que ainda pode ser solicitado; faixa em destaque no topo */}
                   <div
-                    className="rounded-xl p-5 sm:col-span-3 order-first flex flex-wrap items-center justify-between gap-4"
+                    className="rounded-xl p-5 sm:col-span-2 lg:col-span-4 order-first flex flex-wrap items-center justify-between gap-4"
                     style={{ background: "#072a3c", border: "2px solid #c2a360", boxShadow: "0 6px 18px rgba(7,42,60,0.25)" }}
                   >
                     <div className="min-w-0">
                       <p className="text-xs uppercase tracking-wider mb-1 font-semibold" style={{ color: "#c2a360" }}>
-                        Liberado
+                        Disponível
                       </p>
                       <p
                         className="text-3xl sm:text-4xl font-bold tabular-nums whitespace-nowrap"
@@ -426,7 +502,7 @@ export default function PainelPage() {
                         {formatBRL(r.saldo_a_utilizar)}
                       </p>
                       <p className="text-xs mt-1" style={{ color: "#d6bd8a" }}>
-                        disponível para novas solicitações · Saldo − Reserva − Transmitido
+                        para novas solicitações · Saldo − Reserva − Aprovado − Transmitido
                       </p>
                     </div>
                     <Link
@@ -466,17 +542,18 @@ export default function PainelPage() {
                               Solicitar deste desconto →
                             </Link>
                           </div>
-                          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                          <dl className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                             {[
                               ["Saldo", e.saldo],
                               ["− Reserva", e.reserva],
-                              ["− Transmitido", e.liberado],
-                              ["= Liberado", e.saldo_a_utilizar],
+                              ["− Aprovado", e.aprovado],
+                              ["− Transmitido", e.transmitido],
+                              ["= Disponível", e.saldo_a_utilizar],
                             ].map(([rot, v], i) => (
                               <div key={rot as string}>
                                 <dt className="text-xs uppercase tracking-wider text-gray-500">{rot}</dt>
-                                <dd className={i === 3 ? "text-lg" : ""}>
-                                  <Valor v={v as number} destaque={i === 3} />
+                                <dd className={i === 4 ? "text-lg" : ""}>
+                                  <Valor v={v as number} destaque={i === 4} />
                                 </dd>
                               </div>
                             ))}
@@ -493,7 +570,7 @@ export default function PainelPage() {
                       Movimentações
                     </h2>
                     <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                      {(["aprovada", "reprovada", "em_analise", "expirada"] as const).map((k) => (
+                      {(["em_analise", "aprovada", "aprovada_utilizada", "reprovada", "expirada"] as const).map((k) => (
                         <span key={k} className="flex items-center gap-1">
                           <span className="w-2.5 h-2.5 rounded-full" style={{ background: SITUACAO[k].cor }} />
                           {SITUACAO[k].label}
@@ -506,7 +583,15 @@ export default function PainelPage() {
                   ) : (
                     <ul className="flex flex-col divide-y divide-gray-100">
                       {movimentos.map((m) => (
-                        <LinhaMovimento key={m.id} m={m} fila={fila[m.id]} />
+                        <LinhaMovimento
+                          key={m.id}
+                          m={m}
+                          fila={fila[m.id]}
+                          onMudou={() => {
+                            carregarDetalhe();
+                            carregarPainel();
+                          }}
+                        />
                       ))}
                     </ul>
                   )}
@@ -521,8 +606,10 @@ export default function PainelPage() {
               A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
               <strong>Reserva</strong>: solicitações aguardando o gestor, válidas por <strong>48 horas</strong> (se não forem
               aprovadas nesse prazo, expiram e o valor volta para o saldo).{" "}
-              <strong>Transmitido</strong>: aprovado pelo gestor (passa da Reserva para cá). <strong>Liberado</strong> =
-              Saldo − Reserva − Transmitido: o que ainda está livre para novas solicitações. As solicitações aparecem por
+              <strong>Aprovado</strong>: aprovado pelo gestor (passa da Reserva para cá).{" "}
+              <strong>Transmitido</strong>: depois que o franqueado clica em &quot;Proposta transmitida&quot;.{" "}
+              <strong>Disponível</strong> = Saldo − Reserva − Aprovado − Transmitido: o que ainda está livre para novas
+              solicitações. As solicitações aparecem por
               <strong> ordem de chegada</strong>: quem pede primeiro tem a preferência.
             </p>
           </>

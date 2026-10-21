@@ -60,7 +60,7 @@ export default function AdminPage() {
   }
 
   const ativas = (linhas ?? []).filter((l) => l.ativa);
-  const total = (k: "saldo" | "reserva" | "liberado" | "saldo_a_utilizar") => ativas.reduce((acc, l) => acc + l[k], 0);
+  const total = (k: "saldo" | "reserva" | "aprovado" | "transmitido" | "saldo_a_utilizar") => ativas.reduce((acc, l) => acc + l[k], 0);
 
   return (
     <>
@@ -122,9 +122,10 @@ export default function AdminPage() {
                   <th className="px-4 py-3 font-semibold">Seguradora</th>
                   <th className="px-4 py-3 font-semibold text-right">Saldo</th>
                   <th className="px-4 py-3 font-semibold text-right">Reserva</th>
+                  <th className="px-4 py-3 font-semibold text-right">Aprovado</th>
                   <th className="px-4 py-3 font-semibold text-right">Transmitido</th>
                   <th className="px-4 py-3 font-semibold text-right" style={{ color: "#d6bd8a" }}>
-                    Liberado
+                    Disponível
                   </th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -140,13 +141,14 @@ export default function AdminPage() {
                       {!l.ativa && <span className="ml-2 text-xs text-gray-500">(inativa — fora do painel)</span>}
                       {(l.especiais ?? []).map((e) => (
                         <span key={e.categoria} className="block text-xs font-semibold mt-1" style={{ color: "#9a3412" }}>
-                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · liberado {formatBRL(e.saldo_a_utilizar)}
+                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · disponível {formatBRL(e.saldo_a_utilizar)}
                         </span>
                       ))}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(l.saldo)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.reserva)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.liberado)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.aprovado)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.transmitido)}</td>
                     <td
                       className="px-4 py-3 text-right tabular-nums font-bold"
                       style={{ color: l.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}
@@ -166,7 +168,7 @@ export default function AdminPage() {
                 ))}
                 {linhas.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
                       Nenhuma seguradora cadastrada. Comece cadastrando acima.
                     </td>
                   </tr>
@@ -178,7 +180,8 @@ export default function AdminPage() {
                     <td className="px-4 py-3">Total (ativas)</td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("saldo"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("reserva"))}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("liberado"))}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("aprovado"))}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("transmitido"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums" style={{ color: "#072a3c" }}>
                       {formatBRL(total("saldo_a_utilizar"))}
                     </td>

@@ -99,8 +99,8 @@ function UsoFranqueados() {
     <>
       <div>
         <p className="text-sm text-gray-500 mb-5">
-          Quanto cada franqueado usou da verba de {nomeSeg} em {formatMes(mes)}. &quot;Usado&quot; = utilizado + reservado
-          (aprovado aguardando uso). Solicitações em análise ou não aprovadas não contam como uso.
+          Quanto cada franqueado usou da verba de {nomeSeg} em {formatMes(mes)}. &quot;Usado&quot; = transmitido + aprovado
+          (aguardando a proposta ser transmitida). Solicitações em análise ou não aprovadas não contam como uso.
         </p>
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -155,8 +155,8 @@ function UsoFranqueados() {
                 <thead>
                   <tr style={{ background: "#072a3c" }} className="text-white text-left">
                     <th className="px-4 py-3 font-semibold">Franqueado</th>
-                    <th className="px-4 py-3 font-semibold text-right">Utilizado</th>
-                    <th className="px-4 py-3 font-semibold text-right">Reservado</th>
+                    <th className="px-4 py-3 font-semibold text-right">Transmitido</th>
+                    <th className="px-4 py-3 font-semibold text-right">Aprovado</th>
                     <th className="px-4 py-3 font-semibold text-right">Total usado</th>
                     <th className="px-4 py-3 font-semibold" style={{ color: "#d6bd8a" }}>
                       % da verba total

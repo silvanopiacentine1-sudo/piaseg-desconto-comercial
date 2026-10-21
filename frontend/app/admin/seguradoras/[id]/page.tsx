@@ -150,7 +150,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       : (resumo?.saldo_a_utilizar ?? 0);
     if (tipo !== "credito" && resumo && v > disp) {
       const ok = window.confirm(
-        `Atenção: ${formatBRL(v)} é maior que o Liberado${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
+        `Atenção: ${formatBRL(v)} é maior que o Disponível${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
           "O saldo vai ficar negativo. Deseja lançar mesmo assim?",
       );
       if (!ok) return;
@@ -217,8 +217,8 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
     setErro("");
     setAviso("");
     const textos = {
-      utilizar: `Baixar a reserva de ${formatBRL(l.valor)} como UTILIZADA? O valor sai do saldo.`,
-      cancelar: `Cancelar a reserva de ${formatBRL(l.valor)}? O valor volta para o Liberado.`,
+      utilizar: `Marcar a reserva de ${formatBRL(l.valor)} como PROPOSTA TRANSMITIDA? O valor vai para Transmitido.`,
+      cancelar: `Cancelar a reserva de ${formatBRL(l.valor)}? O valor volta para o Disponível.`,
       estornar: `Estornar este lançamento de ${formatBRL(l.valor)}? Ele deixa de contar no saldo (continua no extrato como estornado).`,
     };
     let motivo = "";
@@ -359,11 +359,12 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               </p>
               <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
               <Card label="Saldo (verba do mês)" v={resumo.saldo} />
               <Card label="− Reserva" v={resumo.reserva} />
-              <Card label="− Transmitido" v={resumo.liberado} />
-              <Card label="= Liberado" v={resumo.saldo_a_utilizar} destaque />
+              <Card label="− Aprovado" v={resumo.aprovado} />
+              <Card label="− Transmitido" v={resumo.transmitido} />
+              <Card label="= Disponível" v={resumo.saldo_a_utilizar} destaque />
             </div>
             {especiais.length > 0 && (
               <div className="mb-8 -mt-4">
@@ -387,10 +388,13 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                         − Reserva <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>
                       </span>
                       <span>
-                        − Transmitido <strong className="tabular-nums">{formatBRL(e.liberado)}</strong>
+                        − Aprovado <strong className="tabular-nums">{formatBRL(e.aprovado)}</strong>
                       </span>
                       <span>
-                        = Liberado{" "}
+                        − Transmitido <strong className="tabular-nums">{formatBRL(e.transmitido)}</strong>
+                      </span>
+                      <span>
+                        = Disponível{" "}
                         <strong className="tabular-nums" style={{ color: e.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}>
                           {formatBRL(e.saldo_a_utilizar)}
                         </strong>
@@ -639,7 +643,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                                   : { color: "#8a6a1f", background: "#fbf3e0" }
                               }
                             >
-                              {l.solicitacao_id ? "✓ Transmitido (aprovado pelo gestor)" : "Reserva manual"}
+                              {l.solicitacao_id ? "✓ Aprovado (aguardando proposta transmitida)" : "Reserva manual"}
                             </span>
                             {!l.solicitacao_id && l.expira_em && (
                               <span className="ml-2 align-middle">
@@ -662,7 +666,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                             className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white cursor-pointer"
                             style={{ background: "#072a3c" }}
                           >
-                            Baixar (utilizada)
+                            ✓ Proposta transmitida
                           </button>
                           <button
                             onClick={() => acao(l, "cancelar")}

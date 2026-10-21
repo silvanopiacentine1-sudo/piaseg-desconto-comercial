@@ -7,6 +7,8 @@ export interface Especial {
   reserva: number;
   em_analise: number;
   liberado: number;
+  aprovado: number;
+  transmitido: number;
   saldo_a_utilizar: number;
 }
 
@@ -22,6 +24,8 @@ export interface Resumo {
   reserva: number;
   em_analise: number;
   liberado: number;
+  aprovado: number;
+  transmitido: number;
   saldo_a_utilizar: number;
   atualizado_em: string | null;
 }
@@ -52,7 +56,7 @@ export interface Lancamento {
 
 export type ResumoPublico = Pick<
   Resumo,
-  "id" | "nome" | "logo_url" | "saldo" | "reserva" | "em_analise" | "liberado" | "saldo_a_utilizar" | "atualizado_em"
+  "id" | "nome" | "logo_url" | "saldo" | "reserva" | "em_analise" | "liberado" | "aprovado" | "transmitido" | "saldo_a_utilizar" | "atualizado_em"
 >;
 
 export interface PainelPublico {
@@ -99,13 +103,15 @@ export interface Movimento {
   expira_em?: string | null;
   expirada_em?: string | null;
   cotacao?: string;
+  pode_transmitir?: boolean;
+  transmitida_em?: string | null;
 }
 
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
   credito: { label: "Crédito de verba", cor: "#072a3c", fundo: "#e6edf1" },
   em_analise: { label: "Em análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
-  aprovada: { label: "Aprovada · transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
-  aprovada_utilizada: { label: "Aprovada · utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  aprovada: { label: "Aprovada · aguardando transmissão", cor: "#1d5fb8", fundo: "#e8f0fb" },
+  aprovada_utilizada: { label: "✓ Proposta transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
   reservada: { label: "Reservada", cor: "#1f7a4d", fundo: "#e8f3ec" },
   utilizada: { label: "Utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
@@ -181,7 +187,7 @@ export interface Solicitacao {
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
   pendente: { label: "Aguardando análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
-  aprovada: { label: "Aprovada · transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
+  aprovada: { label: "Aprovada", cor: "#1d5fb8", fundo: "#e8f0fb" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
   expirada: { label: "Expirada · prazo de 48h", cor: "#6b7280", fundo: "#f1f1f1" },
 };

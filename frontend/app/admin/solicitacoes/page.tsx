@@ -30,6 +30,38 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
   const reservaGestor = s.origem === "gestor" && s.status === "pendente";
   const excede = s.saldo_a_utilizar_atual !== undefined && s.valor > s.saldo_a_utilizar_atual;
 
+  // clique errado em "Proposta transmitida": volta para Aprovado (fica no histórico)
+  async function desfazerTransmissao() {
+    setErro("");
+    const motivo = window.prompt(
+      `Desfazer a "Proposta transmitida" da solicitação #${s.numero} (${formatBRL(s.valor)} · ${s.franqueado})?\n` +
+        "O valor volta de Transmitido para Aprovado.\n\nInforme o motivo (fica no histórico):",
+    );
+    if (motivo === null) return;
+    if (!motivo.trim()) {
+      setErro("Informe o motivo.");
+      return;
+    }
+    let operador = getOperador();
+    if (!operador) {
+      operador = window.prompt("Informe seu nome (fica registrado):")?.trim() ?? "";
+      if (!operador) return;
+      localStorage.setItem("desconto_operador", operador);
+    }
+    setEnviando(true);
+    try {
+      await apiJson(`/admin/solicitacoes/${s.id}/desfazer-transmitida`, {
+        method: "POST",
+        body: JSON.stringify({ operador, motivo }),
+      });
+      onRespondida();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao desfazer");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   // só admin: devolve uma solicitação expirada para análise com novo prazo de 48h
   async function reabrir() {
     setErro("");
@@ -67,7 +99,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
     }
     if (decisao === "aprovar" && excede) {
       const ok = window.confirm(
-        `O valor (${formatBRL(s.valor)}) é maior que o Liberado de ${s.seguradora_nome} ` +
+        `O valor (${formatBRL(s.valor)}) é maior que o Disponível de ${s.seguradora_nome} ` +
           `(${formatBRL(s.saldo_a_utilizar_atual!)}). O saldo vai ficar negativo. Aprovar mesmo assim?`,
       );
       if (!ok) return;
@@ -147,7 +179,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       {s.status === "expirada" && (
         <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#f1f1f1", color: "#4b5563" }}>
           ⌛ Expirou{s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} — o prazo de 48h terminou sem aprovação e o
-          valor voltou para o Liberado. Fica registrado aqui como evidência.
+          valor voltou para o Disponível. Fica registrado aqui como evidência.
           <button
             onClick={reabrir}
             disabled={enviando}
@@ -180,9 +212,9 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       {s.status === "expirada" ? null : s.status === "pendente" ? (
         <>
           <p className="text-xs mb-2" style={{ color: excede ? "#b42318" : "#555" }}>
-            Liberado hoje em {s.seguradora_nome}
+            Disponível hoje em {s.seguradora_nome}
             {s.categoria ? ` (desconto especial ${s.categoria})` : ""}: <strong>{formatBRL(s.saldo_a_utilizar_atual ?? 0)}</strong>
-            {excede && " — valor solicitado excede o Liberado"}
+            {excede && " — valor solicitado excede o Disponível"}
           </p>
           <textarea
             value={resposta}
@@ -203,7 +235,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer disabled:opacity-60"
               style={{ background: "#1f7a4d" }}
             >
-              {reservaGestor ? "✓ Negócio fechado — aprovar e transmitir" : "✓ Aprovar e transmitir"}
+              {reservaGestor ? "✓ Negócio fechado — aprovar" : "✓ Aprovar"}
             </button>
             <button
               onClick={() => responder("reprovar")}
@@ -224,10 +256,35 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           </span>
           {s.resposta || "—"}
           {s.status === "aprovada" && (
-            <Link href={`/admin/seguradoras/${s.seguradora_id}`} className="block text-xs mt-2 underline" style={{ color: "#072a3c" }}>
-              Ver reserva na conta da seguradora
-              {s.reserva_status && ` (${s.reserva_status === "aberta" ? "em aberto" : s.reserva_status})`}
-            </Link>
+            <span className="flex flex-wrap items-center gap-2 mt-2">
+              {s.reserva_status === "utilizada" ? (
+                <>
+                  <span
+                    className="text-xs font-bold rounded-full px-2.5 py-1"
+                    style={{ background: "#e8f3ec", color: "#1f7a4d" }}
+                  >
+                    ✓ Proposta transmitida
+                  </span>
+                  <button
+                    onClick={desfazerTransmissao}
+                    disabled={enviando}
+                    className="text-xs underline cursor-pointer disabled:opacity-60"
+                    style={{ color: "#b45309" }}
+                  >
+                    Desfazer (voltar para Aprovado)
+                  </button>
+                </>
+              ) : s.reserva_status === "aberta" ? (
+                <span className="text-xs font-bold rounded-full px-2.5 py-1" style={{ background: "#e8f0fb", color: "#1d5fb8" }}>
+                  Aprovado · aguardando o franqueado marcar &quot;Proposta transmitida&quot;
+                </span>
+              ) : (
+                s.reserva_status && <span className="text-xs text-gray-500">Reserva {s.reserva_status}</span>
+              )}
+              <Link href={`/admin/seguradoras/${s.seguradora_id}`} className="text-xs underline" style={{ color: "#072a3c" }}>
+                Ver na conta da seguradora
+              </Link>
+            </span>
           )}
         </div>
       )}

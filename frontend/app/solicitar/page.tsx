@@ -123,14 +123,14 @@ function Formulario() {
               <option value="">Selecione...</option>
               {seguradoras.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.nome} — liberado {formatBRL(s.saldo_a_utilizar)}
+                  {s.nome} — disponível {formatBRL(s.saldo_a_utilizar)}
                 </option>
               ))}
             </select>
             {seg && (
               <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
                 <Logo nome={seg.nome} url={seg.logo_url} size={28} />
-                Liberado{esp ? ` (${esp.categoria})` : ""}:{" "}
+                Disponível{esp ? ` (${esp.categoria})` : ""}:{" "}
                 <strong style={{ color: "#072a3c" }}>{formatBRL(disponivel ?? 0)}</strong>
               </div>
             )}
@@ -140,10 +140,10 @@ function Formulario() {
             <div>
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Automóvel — liberado {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
-                    ★ Desconto especial: {e.categoria} — liberado {formatBRL(e.saldo_a_utilizar)}
+                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
                   </option>
                 ))}
               </select>
@@ -165,7 +165,7 @@ function Formulario() {
             />
             {seg && Number.isFinite(v) && v > (disponivel ?? 0) && (
               <p className="text-xs text-amber-700 mt-1">
-                O valor é maior que o Liberado desta seguradora. Você pode enviar, mas a aprovação depende do gestor.
+                O valor é maior que o Disponível desta seguradora. Você pode enviar, mas a aprovação depende do gestor.
               </p>
             )}
           </div>

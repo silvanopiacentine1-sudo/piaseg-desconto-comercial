@@ -450,8 +450,10 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         "saldo": creditos / 100,
         "reserva": reservado / 100,
         "em_analise": em_analise / 100,
-        "liberado": liberado / 100,
-        "saldo_a_utilizar": (creditos - reservado - liberado) / 100,
+        "liberado": liberado / 100,  # = aprovado + transmitido (mantido por compatibilidade)
+        "aprovado": liberado_aberto / 100,  # aprovado pelo gestor, aguardando "proposta transmitida"
+        "transmitido": utilizado / 100,  # proposta transmitida (ou utilização direta)
+        "saldo_a_utilizar": (creditos - reservado - liberado) / 100,  # "Disponível"
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
 
@@ -466,7 +468,7 @@ def _especiais(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dic
     out = []
     for c in sorted(cats, key=str.lower):
         r = _resumo(seguradora, lancamentos, solicitacoes, mes, treino, categoria=c)
-        out.append({"categoria": c, **{k: r[k] for k in ("saldo", "reserva", "em_analise", "liberado", "saldo_a_utilizar")}})
+        out.append({"categoria": c, **{k: r[k] for k in ("saldo", "reserva", "em_analise", "liberado", "aprovado", "transmitido", "saldo_a_utilizar")}})
     return out
 
 
@@ -513,7 +515,8 @@ def versao():
     return JSONResponse({"v": str(_versao["v"])}, headers={"Cache-Control": "no-store"})
 
 
-_CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "liberado", "saldo_a_utilizar", "atualizado_em")
+_CAMPOS_PUBLICOS = ("id", "nome", "logo_url", "saldo", "reserva", "em_analise", "liberado", "aprovado", "transmitido",
+                    "saldo_a_utilizar", "atualizado_em")
 
 
 @app.get("/painel")
@@ -538,6 +541,8 @@ def painel(mes: Optional[str] = None, treino: bool = False):
             "saldo": round(sum(r["saldo"] for r in linhas), 2),
             "reserva": round(sum(r["reserva"] for r in linhas), 2),
             "liberado": round(sum(r["liberado"] for r in linhas), 2),
+            "aprovado": round(sum(r["aprovado"] for r in linhas), 2),
+            "transmitido": round(sum(r["transmitido"] for r in linhas), 2),
             "saldo_a_utilizar": round(sum(r["saldo_a_utilizar"] for r in linhas), 2),
         },
         "atualizado_em": max((r["atualizado_em"] or "" for r in linhas), default=None) or None,
@@ -600,6 +605,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
             "expira_em": (s.get("expira_em") or _expira_em(s["created_at"])) if s["status"] == "pendente" else None,
+            "pode_transmitir": situacao == "aprovada",
+            "transmitida_em": s.get("transmitida_em"),
             "expirada_em": s.get("expirada_em"),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
@@ -842,6 +849,17 @@ def _acao_reserva(lanc_id: str, body: AcaoOperador, novo_status: str) -> dict:
         lanc["status_motivo"] = body.motivo.strip()
         lanc["updated_at"] = lanc["status_em"]
         _save(LANCAMENTOS_FILE, lancamentos)
+        if lanc.get("solicitacao_id"):
+            sols = _load(SOLICITACOES_FILE)
+            sol = next((x for x in sols if x["id"] == lanc["solicitacao_id"]), None)
+            if sol:
+                if novo_status == "utilizada":
+                    sol["transmitida_em"] = lanc["status_em"]
+                    _evento(sol, "transmitida", operador, "Proposta transmitida (marcada pelo admin)", em=lanc["status_em"])
+                else:
+                    _evento(sol, "cancelada", operador, body.motivo.strip() or "Reserva cancelada pelo admin",
+                            em=lanc["status_em"])
+                _save(SOLICITACOES_FILE, sols)
     return _public_lancamento(lanc)
 
 
@@ -1173,6 +1191,64 @@ def limpar_treinamento(_: None = Depends(require_admin)):
     return removidos
 
 
+def _lanc_da_solicitacao(s: dict, lancamentos: list[dict]) -> Optional[dict]:
+    return next((l for l in lancamentos if l["id"] == s.get("lancamento_id")), None)
+
+
+@app.post("/solicitacoes/{sol_id}/transmitida")
+def marcar_transmitida(sol_id: str):
+    """Franqueado clica em "Proposta transmitida" no painel: o valor sai de
+    Aprovado e vai para Transmitido. Fica no histórico com data e hora."""
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        lancamentos = _load(LANCAMENTOS_FILE)
+        lanc = _lanc_da_solicitacao(s, lancamentos)
+        if s["status"] != "aprovada" or not lanc or lanc.get("estornado") or lanc.get("status") != "aberta":
+            raise HTTPException(400, "Só é possível marcar como transmitida uma reserva aprovada")
+        agora = now_iso()
+        lanc["status"] = "utilizada"
+        lanc["status_por"] = f"{s['franqueado']} (painel)"
+        lanc["status_em"] = agora
+        lanc["status_motivo"] = "Proposta transmitida"
+        lanc["updated_at"] = agora
+        s["transmitida_em"] = agora
+        _evento(s, "transmitida", s["franqueado"], "Proposta transmitida — marcada no painel", em=agora)
+        _save(LANCAMENTOS_FILE, lancamentos)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
+@app.post("/admin/solicitacoes/{sol_id}/desfazer-transmitida")
+def desfazer_transmitida(sol_id: str, body: AcaoOperador, _: None = Depends(require_admin)):
+    """Clique errado em "Proposta transmitida": volta para Aprovado (registrado)."""
+    operador = _operador(body.operador)
+    motivo = body.motivo.strip()
+    if not motivo:
+        raise HTTPException(400, "Informe o motivo")
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        lancamentos = _load(LANCAMENTOS_FILE)
+        lanc = _lanc_da_solicitacao(s, lancamentos)
+        if not lanc or lanc.get("status") != "utilizada" or lanc.get("estornado"):
+            raise HTTPException(400, "Essa reserva não está marcada como transmitida")
+        agora = now_iso()
+        lanc["status"] = "aberta"
+        for k in ("status_por", "status_em", "status_motivo"):
+            lanc.pop(k, None)
+        lanc["updated_at"] = agora
+        s.pop("transmitida_em", None)
+        _evento(s, "transmissao_desfeita", operador, f"Voltou para Aprovado. Motivo: {motivo}", em=agora)
+        _save(LANCAMENTOS_FILE, lancamentos)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
 @app.post("/admin/solicitacoes/{sol_id}/reabrir")
 def reabrir_solicitacao(sol_id: str, body: AcaoOperador, _: None = Depends(require_admin)):
     """Volta uma solicitação EXPIRADA para análise com novo prazo de 48h
@@ -1489,10 +1565,11 @@ def export_excel(_: None = Depends(require_admin)):
 
     ws = wb.active
     ws.title = "Saldos"
-    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Transmitido", "Liberado"])
+    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Aprovado", "Transmitido", "Disponível"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
-        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["liberado"], r["saldo_a_utilizar"]])
-    for row in ws.iter_rows(min_row=2, min_col=3, max_col=6):
+        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["aprovado"], r["transmitido"],
+                   r["saldo_a_utilizar"]])
+    for row in ws.iter_rows(min_row=2, min_col=3, max_col=7):
         for c in row:
             c.number_format = brl
 
