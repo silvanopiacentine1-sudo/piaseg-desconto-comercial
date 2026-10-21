@@ -1321,6 +1321,31 @@ def reabrir_solicitacao(sol_id: str, body: AcaoOperador, _: None = Depends(requi
 # Manutenção pontual: zera créditos/reservas/solicitações (dados de teste),
 # mantendo seguradoras, logos e gestores. Só funciona com o token da env var
 # MANUTENCAO_TOKEN configurada no servidor — sem ela, a rota nem existe (404).
+@app.post("/admin/manutencao/excluir-solicitacao/{sol_id}")
+def excluir_solicitacao(sol_id: str, x_manutencao: str = Header(default="")):
+    """Manutenção pontual: apaga UMA solicitação pelo id exato (e a reserva
+    ligada a ela, se houver). Mesmo token da rota acima; backup antes."""
+    token = os.getenv("MANUTENCAO_TOKEN", "")
+    if not token or x_manutencao != token:
+        raise HTTPException(404, "Not Found")
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        backup = _snapshot(f"antes-excluir-sol-{s['numero']}-") if os.getenv("DATA_DIR") else None
+        _save(SOLICITACOES_FILE, [x for x in solicitacoes if x["id"] != sol_id])
+        lanc_removido = False
+        if s.get("lancamento_id"):
+            lancamentos = _load(LANCAMENTOS_FILE)
+            restante = [l for l in lancamentos if l["id"] != s["lancamento_id"]]
+            lanc_removido = len(restante) != len(lancamentos)
+            if lanc_removido:
+                _save(LANCAMENTOS_FILE, restante)
+    return {"excluida": {"numero": s["numero"], "franqueado": s["franqueado"], "valor": s["valor_centavos"] / 100},
+            "reserva_removida": lanc_removido, "backup": backup}
+
+
 @app.post("/admin/manutencao/zerar-movimentos")
 def zerar_movimentos(x_manutencao: str = Header(default="")):
     token = os.getenv("MANUTENCAO_TOKEN", "")
