@@ -125,23 +125,28 @@ function Detalhe({ id }: { id: string }) {
           </button>
         )}
         {s.status === "pendente" && (
+          <p className="text-sm text-gray-500 mt-4">Aguardando a análise do gestor. Volte a esta página para ver a resposta.</p>
+        )}
+        {s.status === "aprovada" && s.expira_em && (
           <div className="mt-4 flex flex-col gap-2">
-            {s.expira_em && (
-              <div>
-                <Prazo expiraEm={s.expira_em} />
-              </div>
-            )}
-            <p className="text-sm text-gray-500">
-              Aguardando a análise do gestor. A reserva vale por <strong>48 horas</strong>: se não for aprovada nesse prazo,
-              ela expira e o valor volta para o saldo da rede.
+            <div>
+              <Prazo expiraEm={s.expira_em} />
+            </div>
+            <p className="text-sm text-gray-600">
+              Você tem <strong>48 horas</strong> a partir da aprovação para clicar em &quot;Proposta transmitida&quot;. Se não
+              clicar nesse prazo, o <strong>desconto expira</strong> e o valor volta para o saldo da rede.
             </p>
           </div>
         )}
         {s.status === "expirada" && (
-          <p className="text-sm rounded-lg px-3 py-2 mt-4" style={{ background: "#f1f1f1", color: "#4b5563" }}>
-            ⌛ Esta reserva <strong>expirou</strong>
-            {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`}: o prazo de 48h terminou sem aprovação e o valor voltou
-            para o Disponível. Se ainda precisar do desconto, faça uma nova solicitação.
+          <p
+            className="text-sm rounded-lg px-3 py-2 mt-4"
+            style={{ background: "#fdecea", color: "#b42318", border: "1px solid #f5c2bd" }}
+          >
+            <strong>⛔ Desconto expirado</strong>
+            {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`}: a proposta não foi marcada como transmitida em 48h
+            após a aprovação e o valor voltou para o saldo. Se ainda precisar do desconto, fale com o gestor ou faça uma nova
+            solicitação.
           </p>
         )}
         {s.historico && s.historico.length > 0 && (

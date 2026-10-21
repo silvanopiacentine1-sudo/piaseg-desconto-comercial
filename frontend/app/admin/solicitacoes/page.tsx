@@ -161,7 +161,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
             {reservaGestor ? "◷ Reserva · negociação em andamento" : st.label}
           </span>
-          {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} />}
+          {s.status === "aprovada" && s.expira_em && <Prazo expiraEm={s.expira_em} />}
         </div>
       </div>
 
@@ -177,9 +177,16 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
       </div>
 
       {s.status === "expirada" && (
-        <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#f1f1f1", color: "#4b5563" }}>
-          ⌛ Expirou{s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} — o prazo de 48h terminou sem aprovação e o
-          valor voltou para o Disponível. Fica registrado aqui como evidência.
+        <p
+          className="text-sm rounded-lg px-3 py-2 mb-3"
+          style={{ background: "#fdecea", color: "#b42318", border: "1px solid #f5c2bd" }}
+        >
+          <strong>⛔ Desconto expirado</strong>
+          {s.expirada_em && ` em ${formatDateTime(s.expirada_em)}`} —{" "}
+          {s.etapa_expirada === "aprovada"
+            ? "o franqueado não marcou \"Proposta transmitida\" em 48h após a aprovação"
+            : "expirou pela regra antiga (48h sem aprovação)"}
+          ; o valor voltou para o Disponível. Fica registrado aqui como evidência.
           <button
             onClick={reabrir}
             disabled={enviando}

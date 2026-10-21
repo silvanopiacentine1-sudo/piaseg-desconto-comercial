@@ -129,35 +129,40 @@ def _evento(obj: dict, tipo: str, por: str, detalhe: str = "", em: Optional[str]
 
 
 def _expirar_vencidas() -> int:
-    """Expira reservas com prazo vencido. Seguro chamar a qualquer momento."""
+    """Regra (a partir de 2026-10-21): a Reserva NÃO tem prazo. O prazo de 48h
+    vale para o APROVADO: depois que o gestor aprova, o franqueado tem 48h para
+    clicar em "Proposta transmitida". Se não clicar, o desconto expira e o valor
+    volta para o saldo (Disponível). Seguro chamar a qualquer momento."""
     agora = datetime.now(timezone.utc)
-    msg = f"Prazo de {PRAZO_RESERVA_H}h encerrado sem aprovação — o valor voltou para o Liberado."
+    msg = (f"Desconto expirado: a proposta não foi marcada como transmitida em {PRAZO_RESERVA_H}h "
+           "após a aprovação — o valor voltou para o Disponível.")
     with _lock:
         solicitacoes = _load(SOLICITACOES_FILE)
         lancamentos = _load(LANCAMENTOS_FILE)
+        sol_por_id = {x["id"]: x for x in solicitacoes}
         mud_s = mud_l = 0
-        for x in solicitacoes:
-            if x["status"] != "pendente":
-                continue
-            exp = x.get("expira_em") or _expira_em(x["created_at"])
-            if datetime.fromisoformat(exp) <= agora:
-                x["status"] = "expirada"
-                x["expirada_em"] = agora.isoformat()
-                x["expira_em"] = exp
-                _evento(x, "expirada", SISTEMA, msg, em=x["expirada_em"])
-                mud_s += 1
         for l in lancamentos:
-            if l["tipo"] != "reserva" or l.get("status") != "aberta" or l.get("solicitacao_id") or l.get("estornado"):
+            if l["tipo"] != "reserva" or l.get("status") != "aberta" or not l.get("solicitacao_id") or l.get("estornado"):
                 continue
-            exp = l.get("expira_em") or _expira_em(l["created_at"])
-            if datetime.fromisoformat(exp) <= agora:
+            if not l.get("expira_em"):
+                # aprovado antes desta regra existir: ganha 48h a partir de agora (não perde por regra retroativa)
+                l["expira_em"] = _expira_em(agora.isoformat())
+                mud_l += 1
+                continue
+            if datetime.fromisoformat(l["expira_em"]) <= agora:
                 l["status"] = "expirada"
                 l["status_em"] = agora.isoformat()
                 l["status_por"] = SISTEMA
                 l["status_motivo"] = msg
                 l["updated_at"] = l["status_em"]
-                l["expira_em"] = exp
                 mud_l += 1
+                sol = sol_por_id.get(l["solicitacao_id"])
+                if sol and sol["status"] == "aprovada":
+                    sol["status"] = "expirada"
+                    sol["etapa_expirada"] = "aprovada"
+                    sol["expirada_em"] = l["status_em"]
+                    _evento(sol, "expirada", SISTEMA, msg, em=sol["expirada_em"])
+                    mud_s += 1
         if mud_s:
             _save(SOLICITACOES_FILE, solicitacoes)
         if mud_l:
@@ -577,7 +582,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "data": l["data"], "ordem": l["created_at"], "valor": v / 100, "efeito_c": efeito,
             "franqueado": l.get("franqueado", ""), "descricao": l.get("descricao", ""),
             "teste": _eh_teste(l.get("franqueado")), "categoria": _cat(l),
-            "expira_em": (l.get("expira_em") or _expira_em(l["created_at"])) if situacao == "reservada" else None,
+            "expira_em": None,  # Reserva não tem prazo
             "expirada_em": l.get("status_em") if situacao == "expirada" else None,
         })
     for s in solicitacoes:
@@ -604,7 +609,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "gestor_nome": nomes_gest.get(s["gestor_id"], "?"),
             "canal": s.get("canal"), "criado_por": s.get("criado_por"), "teste": _eh_teste(s["franqueado"]),
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
-            "expira_em": (s.get("expira_em") or _expira_em(s["created_at"])) if s["status"] == "pendente" else None,
+            "expira_em": (lanc_por_id.get(s.get("lancamento_id") or "") or {}).get("expira_em") if situacao == "aprovada" else None,
             "pode_transmitir": situacao == "aprovada",
             "transmitida_em": s.get("transmitida_em"),
             "expirada_em": s.get("expirada_em"),
@@ -830,7 +835,6 @@ def create_lancamento(seg_id: str, body: LancamentoIn, _: None = Depends(require
         }
         if body.tipo == "reserva":
             lanc["status"] = "aberta"
-            lanc["expira_em"] = _expira_em(lanc["created_at"])
         lancamentos.append(lanc)
         _save(LANCAMENTOS_FILE, lancamentos)
     return _public_lancamento(lanc)
@@ -985,7 +989,7 @@ def franqueados_lista():
 # ---------------------------------------------------------------------------
 
 SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada",
-                      "expirada": "Expirada (prazo de 48h)"}
+                      "expirada": "Desconto expirado"}
 
 
 def _historico_antigo(s: dict) -> list[dict]:
@@ -1005,8 +1009,11 @@ def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], la
     out = {k: v for k, v in s.items() if k != "valor_centavos"}
     out["valor"] = s["valor_centavos"] / 100
     out["teste"] = _eh_teste(s["franqueado"])
-    if s["status"] == "pendente":
-        out["expira_em"] = s.get("expira_em") or _expira_em(s["created_at"])
+    out.pop("expira_em", None)
+    if s["status"] == "aprovada" and s.get("lancamento_id"):
+        lanc = next((l for l in lancamentos if l["id"] == s["lancamento_id"]), None)
+        if lanc and lanc.get("status") == "aberta":
+            out["expira_em"] = lanc.get("expira_em")
     out["historico"] = s.get("eventos") or _historico_antigo(s)
     out["seguradora_nome"] = seg["nome"] if seg else "?"
     out["gestor_nome"] = gest["nome"] if gest else "?"
@@ -1047,7 +1054,6 @@ def create_solicitacao(body: SolicitacaoIn):
             "created_at": now_iso(),
             "categoria": _norm_cat(body.categoria),
         }
-        s["expira_em"] = _expira_em(s["created_at"])
         _evento(s, "criada", franqueado, "Solicitação enviada pelo franqueado no painel", em=s["created_at"])
         solicitacoes.append(s)
         _save(SOLICITACOES_FILE, solicitacoes)
@@ -1112,6 +1118,7 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
             "estornado": False,
             "solicitacao_id": s["id"],
             "categoria": _cat(s),
+            "expira_em": _expira_em(agora),  # 48h para o franqueado marcar "Proposta transmitida"
         }
         lancamentos.append(lanc)
         _save(LANCAMENTOS_FILE, lancamentos)
@@ -1160,7 +1167,6 @@ def create_solicitacao_gestor(body: SolicitacaoGestorIn, _: None = Depends(requi
             "criado_por": operador,
             "categoria": _norm_cat(body.categoria),
         }
-        s["expira_em"] = _expira_em(s["created_at"])
         _evento(s, "criada", operador, f"Reserva feita pelo gestor para {franqueado} (pedido via {canal})", em=s["created_at"])
         if body.aprovar:
             _decidir(s, True, body.resposta.strip(), operador)
@@ -1239,11 +1245,12 @@ def desfazer_transmitida(sol_id: str, body: AcaoOperador, _: None = Depends(requ
             raise HTTPException(400, "Essa reserva não está marcada como transmitida")
         agora = now_iso()
         lanc["status"] = "aberta"
+        lanc["expira_em"] = _expira_em(now_iso())
         for k in ("status_por", "status_em", "status_motivo"):
             lanc.pop(k, None)
         lanc["updated_at"] = agora
         s.pop("transmitida_em", None)
-        _evento(s, "transmissao_desfeita", operador, f"Voltou para Aprovado. Motivo: {motivo}", em=agora)
+        _evento(s, "transmissao_desfeita", operador, f"Voltou para Aprovado (novo prazo de {PRAZO_RESERVA_H}h para transmitir). Motivo: {motivo}", em=agora)
         _save(LANCAMENTOS_FILE, lancamentos)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
@@ -1265,12 +1272,27 @@ def reabrir_solicitacao(sol_id: str, body: AcaoOperador, _: None = Depends(requi
         if s["status"] != "expirada":
             raise HTTPException(400, "Só é possível reabrir uma solicitação expirada")
         agora = now_iso()
-        s["status"] = "pendente"
-        s["expira_em"] = _expira_em(agora)
+        lancamentos = _load(LANCAMENTOS_FILE)
+        lanc = next((l for l in lancamentos if l["id"] == s.get("lancamento_id")), None)
+        if lanc and lanc.get("status") == "expirada" and not lanc.get("estornado"):
+            # expirou no Aprovado: volta para Aprovado com novo prazo para transmitir
+            lanc["status"] = "aberta"
+            lanc["expira_em"] = _expira_em(agora)
+            for k in ("status_por", "status_em", "status_motivo"):
+                lanc.pop(k, None)
+            lanc["updated_at"] = agora
+            s["status"] = "aprovada"
+            detalhe = f"Voltou para Aprovado com novo prazo de {PRAZO_RESERVA_H}h para transmitir. Motivo: {motivo}"
+            _save(LANCAMENTOS_FILE, lancamentos)
+        else:
+            # expirada pela regra antiga (na Reserva): volta para análise, sem prazo
+            s["status"] = "pendente"
+            detalhe = f"Voltou para análise do gestor. Motivo: {motivo}"
         s["reaberta_em"] = agora
         s["reaberta_por"] = operador
         s.pop("expirada_em", None)
-        _evento(s, "reaberta", operador, f"Novo prazo de {PRAZO_RESERVA_H}h. Motivo: {motivo}", em=agora)
+        s.pop("etapa_expirada", None)
+        _evento(s, "reaberta", operador, detalhe, em=agora)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
 
@@ -1345,8 +1367,8 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         if l["tipo"] == "credito":
             verba += v
             continue
-        if l["tipo"] == "reserva" and l.get("status") == "cancelada":
-            continue
+        if l["tipo"] == "reserva" and l.get("status") in ("cancelada", "expirada"):
+            continue  # não virou negócio: não conta como uso
         r = linha(l.get("franqueado", ""))
         if l["tipo"] == "reserva" and l.get("status") == "aberta":
             r["reservado"] += v
@@ -1542,7 +1564,7 @@ def relatorio_verba_export(ano: Optional[int] = None, _: None = Depends(require_
 
 
 TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
-STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada", "expirada": "Expirada (prazo de 48h)"}
+STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada", "expirada": "Desconto expirado"}
 
 
 def _br_date(iso: str) -> str:

@@ -23,7 +23,7 @@ export default function Prazo({ expiraEm, compacto = false }: { expiraEm: string
     const h = Math.floor(resta / 3600_000);
     const m = Math.floor((resta % 3600_000) / 60_000);
     texto = h > 0 ? `${h}h ${String(m).padStart(2, "0")}min` : `${m}min`;
-    texto = compacto ? `⏳ ${texto}` : `⏳ expira em ${texto}`;
+    texto = compacto ? `⏳ ${texto}` : `⏳ transmitir em até ${texto}`;
   }
   const fim = new Date(expiraEm).toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -37,7 +37,7 @@ export default function Prazo({ expiraEm, compacto = false }: { expiraEm: string
     <span
       className="inline-flex items-center gap-1 text-xs font-bold rounded-full px-2.5 py-1 whitespace-nowrap tabular-nums"
       style={{ color: cor, background: fundo }}
-      title={`Reserva válida por 48h, até ${fim}. Se não for aprovada até lá, o valor volta para o saldo.`}
+      title={`Prazo para marcar "Proposta transmitida": até ${fim}. Depois disso o desconto expira e o valor volta para o saldo.`}
     >
       {texto}
     </span>

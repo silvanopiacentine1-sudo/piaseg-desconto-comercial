@@ -175,9 +175,13 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
         </div>
       )}
       {m.situacao === "expirada" && (
-        <p className="text-xs rounded-lg px-3 py-2" style={{ background: "#f1f1f1", color: "#4b5563" }}>
-          ⌛ Reserva expirada{m.expirada_em && ` em ${formatDateTime(m.expirada_em)}`}: o prazo de 48h terminou sem
-          aprovação e o valor voltou para o Disponível.
+        <p
+          className="text-sm rounded-lg px-3 py-2"
+          style={{ background: "#fdecea", color: "#b42318", border: "1px solid #f5c2bd" }}
+        >
+          <strong>⛔ Desconto expirado</strong>
+          {m.expirada_em && ` em ${formatDateTime(m.expirada_em)}`}: a proposta não foi marcada como transmitida em
+          48h após a aprovação e o valor voltou para o saldo.
         </p>
       )}
       {m.observacao && (
@@ -341,7 +345,7 @@ export default function PainelPage() {
   // ordem de chegada: o primeiro registro aparece primeiro (quem pede antes tem preferência)
   const movimentos = detalhe?.resumo.id === segId ? [...detalhe.movimentos].reverse() : [];
   const fila: Record<string, number> = {};
-  movimentos.filter((m) => m.situacao === "em_analise").forEach((m, i) => (fila[m.id] = i + 1));
+  movimentos.filter((m) => m.origem === "solicitacao").forEach((m, i) => (fila[m.id] = i + 1));
   const esp = detalhe?.resumo.id === segId ? (detalhe.especiais ?? []) : [];
 
   return (
@@ -604,9 +608,10 @@ export default function PainelPage() {
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
               A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
-              <strong>Reserva</strong>: solicitações aguardando o gestor, válidas por <strong>48 horas</strong> (se não forem
-              aprovadas nesse prazo, expiram e o valor volta para o saldo).{" "}
-              <strong>Aprovado</strong>: aprovado pelo gestor (passa da Reserva para cá).{" "}
+              <strong>Reserva</strong>: solicitações aguardando o gestor.{" "}
+              <strong>Aprovado</strong>: aprovado pelo gestor (passa da Reserva para cá). A partir da aprovação o franqueado
+              tem <strong>48 horas</strong> para clicar em &quot;Proposta transmitida&quot;; se não clicar, o{" "}
+              <strong>desconto expira</strong> e o valor volta para o saldo.{" "}
               <strong>Transmitido</strong>: depois que o franqueado clica em &quot;Proposta transmitida&quot;.{" "}
               <strong>Disponível</strong> = Saldo − Reserva − Aprovado − Transmitido: o que ainda está livre para novas
               solicitações. As solicitações aparecem por

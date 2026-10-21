@@ -645,7 +645,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                             >
                               {l.solicitacao_id ? "✓ Aprovado (aguardando proposta transmitida)" : "Reserva manual"}
                             </span>
-                            {!l.solicitacao_id && l.expira_em && (
+                            {l.solicitacao_id && l.expira_em && (
                               <span className="ml-2 align-middle">
                                 <Prazo expiraEm={l.expira_em} compacto />
                               </span>

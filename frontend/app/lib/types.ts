@@ -116,7 +116,7 @@ export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: 
   utilizada: { label: "Utilizada", cor: "#1f7a4d", fundo: "#e8f3ec" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
   cancelada: { label: "Cancelada", cor: "#6b7280", fundo: "#f1f1f1" },
-  expirada: { label: "Expirada · prazo de 48h", cor: "#6b7280", fundo: "#f1f1f1" },
+  expirada: { label: "Desconto expirado", cor: "#b42318", fundo: "#fdecea" },
 };
 
 const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -183,13 +183,14 @@ export interface Solicitacao {
   expirada_em?: string;
   historico?: EventoHistorico[];
   cotacao?: string;
+  etapa_expirada?: "aprovada";
 }
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
   pendente: { label: "Aguardando análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
   aprovada: { label: "Aprovada", cor: "#1d5fb8", fundo: "#e8f0fb" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
-  expirada: { label: "Expirada · prazo de 48h", cor: "#6b7280", fundo: "#f1f1f1" },
+  expirada: { label: "Desconto expirado", cor: "#b42318", fundo: "#fdecea" },
 };
 
 export const TIPO_LABEL: Record<TipoLancamento, string> = {
@@ -202,7 +203,7 @@ export const STATUS_LABEL: Record<StatusReserva, string> = {
   aberta: "Em aberto",
   utilizada: "Utilizada",
   cancelada: "Cancelada",
-  expirada: "Expirada (prazo de 48h)",
+  expirada: "Desconto expirado",
 };
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });

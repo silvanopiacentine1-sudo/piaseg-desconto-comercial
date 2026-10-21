@@ -8,7 +8,7 @@ const ROTULO: Record<string, { txt: string; cor: string }> = {
   transmissao_desfeita: { txt: "Transmissão desfeita pelo admin", cor: "#b45309" },
   cancelada: { txt: "Reserva cancelada", cor: "#6b7280" },
   reprovada: { txt: "Não aprovada", cor: "#b42318" },
-  expirada: { txt: "Expirada (prazo de 48h)", cor: "#6b7280" },
+  expirada: { txt: "Desconto expirado", cor: "#b42318" },
   reaberta: { txt: "Reaberta pelo admin (+48h)", cor: "#2a78d6" },
 };
 
