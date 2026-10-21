@@ -360,7 +360,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-              <Card label="Saldo (verba do mês)" v={resumo.saldo} />
+              <Card label="Saldo Inicial (verba do mês)" v={resumo.saldo} />
               <Card label="− Reserva" v={resumo.reserva} />
               <Card label="− Aprovado" v={resumo.aprovado} />
               <Card label="− Transmitido" v={resumo.transmitido} />
@@ -382,7 +382,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                         {e.categoria}
                       </strong>
                       <span>
-                        Saldo <strong className="tabular-nums">{formatBRL(e.saldo)}</strong>
+                        Saldo Inicial <strong className="tabular-nums">{formatBRL(e.saldo)}</strong>
                       </span>
                       <span>
                         − Reserva <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>

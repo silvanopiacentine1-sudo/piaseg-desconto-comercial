@@ -120,7 +120,7 @@ export default function AdminPage() {
               <thead>
                 <tr style={{ background: "#072a3c" }} className="text-white text-left">
                   <th className="px-4 py-3 font-semibold">Seguradora</th>
-                  <th className="px-4 py-3 font-semibold text-right">Saldo</th>
+                  <th className="px-4 py-3 font-semibold text-right">Saldo Inicial</th>
                   <th className="px-4 py-3 font-semibold text-right">Reserva</th>
                   <th className="px-4 py-3 font-semibold text-right">Aprovado</th>
                   <th className="px-4 py-3 font-semibold text-right">Transmitido</th>

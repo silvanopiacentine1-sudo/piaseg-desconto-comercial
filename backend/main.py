@@ -619,7 +619,9 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
             "respondido_em": s.get("respondido_em"),
         })
-    itens.sort(key=lambda i: (i["data"], i["ordem"]))
+    # a verba do mês é o SALDO INICIAL: créditos vêm sempre primeiro e cada pedido
+    # desconta a partir deles, mesmo que a verba tenha sido lançada depois do pedido
+    itens.sort(key=lambda i: (0 if i["situacao"] == "credito" else 1, i["data"], i["ordem"]))
     saldos: dict = {}  # cada verba (geral e cada especial) tem seu próprio saldo corrente
     for i in itens:
         efeito = i.pop("efeito_c")
@@ -1616,7 +1618,7 @@ def export_excel(_: None = Depends(require_admin)):
 
     ws = wb.active
     ws.title = "Saldos"
-    ws.append(["Seguradora", "Situação", "Saldo", "Reserva", "Aprovado", "Transmitido", "Disponível"])
+    ws.append(["Seguradora", "Situação", "Saldo Inicial", "Reserva", "Aprovado", "Transmitido", "Disponível"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
         ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["aprovado"], r["transmitido"],
                    r["saldo_a_utilizar"]])

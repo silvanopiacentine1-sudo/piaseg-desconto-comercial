@@ -478,7 +478,7 @@ export default function PainelPage() {
                     <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-xl p-5 shadow-sm" style={{ borderTop: "4px solid #072a3c" }}>
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo{esp.length > 0 && " · Automóvel"}</p>
+                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">Saldo Inicial{esp.length > 0 && " · Automóvel"}</p>
                     <p className="text-2xl">
                       <Valor v={r.saldo} destaque />
                     </p>
@@ -527,7 +527,7 @@ export default function PainelPage() {
                         {formatBRL(r.saldo_a_utilizar)}
                       </p>
                       <p className="text-xs mt-1" style={{ color: "#d6bd8a" }}>
-                        para novas solicitações · Saldo − Reserva − Aprovado − Transmitido
+                        para novas solicitações · Saldo Inicial − Reserva − Aprovado − Transmitido
                       </p>
                     </div>
                     <Link
@@ -569,7 +569,7 @@ export default function PainelPage() {
                           </div>
                           <dl className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                             {[
-                              ["Saldo", e.saldo],
+                              ["Saldo Inicial", e.saldo],
                               ["− Reserva", e.reserva],
                               ["− Aprovado", e.aprovado],
                               ["− Transmitido", e.transmitido],
@@ -628,13 +628,13 @@ export default function PainelPage() {
             )}
 
             <p className="text-xs text-gray-500 mt-6 leading-relaxed">
-              A verba é mensal: começa e termina dentro do mês. <strong>Saldo</strong>: verba da seguradora no mês.{" "}
+              A verba é mensal: começa e termina dentro do mês. <strong>Saldo Inicial</strong>: verba da seguradora no mês.{" "}
               <strong>Reserva</strong>: solicitações aguardando o gestor.{" "}
               <strong>Aprovado</strong>: aprovado pelo gestor (passa da Reserva para cá). A partir da aprovação o franqueado
               tem <strong>48 horas</strong> para clicar em &quot;Proposta transmitida&quot;; se não clicar, o{" "}
               <strong>desconto expira</strong> e o valor volta para o saldo.{" "}
               <strong>Transmitido</strong>: depois que o franqueado clica em &quot;Proposta transmitida&quot;.{" "}
-              <strong>Disponível</strong> = Saldo − Reserva − Aprovado − Transmitido: o que ainda está livre para novas
+              <strong>Disponível</strong> = Saldo Inicial − Reserva − Aprovado − Transmitido: o que ainda está livre para novas
               solicitações. As solicitações aparecem por
               <strong> ordem de chegada</strong>: quem pede primeiro tem a preferência.
             </p>
