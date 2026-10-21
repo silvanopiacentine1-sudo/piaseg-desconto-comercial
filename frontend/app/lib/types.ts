@@ -105,6 +105,8 @@ export interface Movimento {
   cotacao?: string;
   pode_transmitir?: boolean;
   transmitida_em?: string | null;
+  ressalva?: boolean;
+  valor_solicitado?: number | null;
 }
 
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
@@ -127,6 +129,8 @@ export function nomeVerba(categoria?: string | null): string {
 }
 
 export const ESPECIAL_COR = { cor: "#9a3412", fundo: "#fff1e8" }; // selo laranja do desconto especial
+
+export const RESSALVA_COR = { cor: "#9a5b00", fundo: "#fff4dc" }; // "Aprovado com ressalva" (âmbar)
 
 export const FRANQUEADO_TESTE = "FRANQUEADO TESTE (treinamento)";
 
@@ -184,6 +188,8 @@ export interface Solicitacao {
   historico?: EventoHistorico[];
   cotacao?: string;
   etapa_expirada?: "aprovada";
+  ressalva?: boolean;
+  valor_aprovado?: number;
 }
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {

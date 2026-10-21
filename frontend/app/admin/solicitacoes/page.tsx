@@ -10,7 +10,7 @@ import Historico from "../../components/Historico";
 import Prazo from "../../components/Prazo";
 import { apiJson } from "../../lib/api";
 import { getOperador, isAdminLoggedIn } from "../../lib/auth";
-import { SOLIC_STATUS, formatBRL, formatDateTime, type Gestor, type Solicitacao, type StatusSolicitacao } from "../../lib/types";
+import { SOLIC_STATUS, parseValor, formatBRL, formatDateTime, type Gestor, type Solicitacao, type StatusSolicitacao } from "../../lib/types";
 
 const GESTOR_KEY = "desconto_filtro_gestor";
 const FILTROS: { v: StatusSolicitacao | "todas"; label: string }[] = [
@@ -23,6 +23,8 @@ const FILTROS: { v: StatusSolicitacao | "todas"; label: string }[] = [
 
 function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: () => void }) {
   const [resposta, setResposta] = useState("");
+  const [modoRessalva, setModoRessalva] = useState(false);
+  const [valorRessalva, setValorRessalva] = useState("");
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [verHistorico, setVerHistorico] = useState(false);
@@ -91,13 +93,28 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
     }
   }
 
-  async function responder(decisao: "aprovar" | "reprovar") {
+  async function responder(decisao: "aprovar" | "reprovar" | "ressalva") {
     setErro("");
     if (decisao === "reprovar" && !resposta.trim()) {
       setErro("Escreva a justificativa para o franqueado antes de não aprovar.");
       return;
     }
-    if (decisao === "aprovar" && excede) {
+    let valor_aprovado: number | undefined;
+    if (decisao === "ressalva") {
+      if (!resposta.trim()) {
+        setErro("Escreva a ressalva para o franqueado (campo de resposta acima).");
+        return;
+      }
+      if (valorRessalva.trim()) {
+        const v = parseValor(valorRessalva);
+        if (!Number.isFinite(v) || v <= 0 || v > s.valor) {
+          setErro(`O valor aprovado deve ser maior que zero e no máximo ${formatBRL(s.valor)}.`);
+          return;
+        }
+        valor_aprovado = v;
+      }
+    }
+    if (decisao !== "reprovar" && excede && !valor_aprovado) {
       const ok = window.confirm(
         `O valor (${formatBRL(s.valor)}) é maior que o Disponível de ${s.seguradora_nome} ` +
           `(${formatBRL(s.saldo_a_utilizar_atual!)}). O saldo vai ficar negativo. Aprovar mesmo assim?`,
@@ -114,7 +131,7 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
     try {
       await apiJson(`/admin/solicitacoes/${s.id}/responder`, {
         method: "POST",
-        body: JSON.stringify({ decisao, resposta, operador }),
+        body: JSON.stringify({ decisao, resposta, operador, valor_aprovado }),
       });
       onRespondida();
     } catch (e) {
@@ -161,6 +178,11 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
           <span className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ color: st.cor, background: st.fundo }}>
             {reservaGestor ? "◷ Reserva · negociação em andamento" : st.label}
           </span>
+          {s.ressalva && (
+            <span className="text-xs font-bold rounded-full px-2.5 py-1" style={{ background: "#fff4dc", color: "#9a5b00" }}>
+              ⚠ com ressalva{s.valor_aprovado ? ` · aprovado ${formatBRL(s.valor_aprovado)}` : ""}
+            </span>
+          )}
           {s.status === "aprovada" && s.expira_em && <Prazo expiraEm={s.expira_em} />}
         </div>
       </div>
@@ -228,9 +250,11 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
             onChange={(e) => setResposta(e.target.value)}
             rows={3}
             placeholder={
-              reservaGestor
-                ? "Mensagem ao franqueado (obrigatória se o negócio não fechou)"
-                : "Resposta ao franqueado (obrigatória para não aprovar)"
+              modoRessalva
+                ? "Escreva a ressalva (obrigatória) — ex.: aprovado só para a renovação da frota atual"
+                : reservaGestor
+                  ? "Mensagem ao franqueado (obrigatória se o negócio não fechou)"
+                  : "Resposta ao franqueado (obrigatória para não aprovar ou para aprovar com ressalva)"
             }
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
           />
@@ -252,12 +276,53 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
             >
               {reservaGestor ? "✕ Não fechou — cancelar reserva" : "✕ Não aprovar"}
             </button>
+            <button
+              onClick={() => setModoRessalva(!modoRessalva)}
+              disabled={enviando}
+              className="rounded-lg px-4 py-2 text-sm font-semibold cursor-pointer disabled:opacity-60"
+              style={
+                modoRessalva
+                  ? { background: "#9a5b00", color: "#fff" }
+                  : { background: "#fff4dc", color: "#9a5b00", border: "1px solid #e9c46a" }
+              }
+            >
+              ⚠ Aprovado com ressalva
+            </button>
           </div>
+          {modoRessalva && (
+            <div className="mt-3 rounded-lg p-3 flex flex-col gap-2" style={{ background: "#fff4dc", border: "1px solid #e9c46a" }}>
+              <p className="text-xs" style={{ color: "#9a5b00" }}>
+                Aprova com uma condição. A <strong>ressalva</strong> (texto acima) é obrigatória e aparece para o franqueado.
+                Se quiser, aprove um <strong>valor menor</strong> que o pedido.
+              </p>
+              <label className="text-sm font-medium flex flex-wrap items-center gap-2">
+                Valor aprovado (R$)
+                <input
+                  value={valorRessalva}
+                  onChange={(e) => setValorRessalva(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={formatBRL(s.valor).replace("R$", "").trim()}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white w-40"
+                />
+                <span className="text-xs text-gray-500">em branco = valor pedido ({formatBRL(s.valor)})</span>
+              </label>
+              <div>
+                <button
+                  onClick={() => responder("ressalva")}
+                  disabled={enviando}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer disabled:opacity-60"
+                  style={{ background: "#9a5b00" }}
+                >
+                  ⚠ Confirmar aprovação com ressalva
+                </button>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div className="text-sm rounded-lg p-3 whitespace-pre-wrap" style={{ background: st.fundo }}>
           <span className="block text-xs uppercase tracking-wider text-gray-500 mb-1">
-            Resposta do gestor {s.gestor_nome}
+            {s.ressalva ? "⚠ Ressalva do gestor" : "Resposta do gestor"} {s.gestor_nome}
             {s.respondido_por && s.respondido_por !== s.gestor_nome && ` (lançada por ${s.respondido_por})`} ·{" "}
             {s.respondido_em && formatDateTime(s.respondido_em)}
           </span>

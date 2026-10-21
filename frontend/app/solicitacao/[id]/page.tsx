@@ -62,7 +62,11 @@ function Detalhe({ id }: { id: string }) {
             Solicitação #{s.numero}
           </h1>
           <span className="text-sm font-semibold rounded-full px-3 py-1" style={{ color: st.cor, background: st.fundo }}>
-            {s.status === "aprovada" && s.reserva_status === "utilizada" ? "✓ Proposta transmitida" : st.label}
+            {s.status === "aprovada" && s.reserva_status === "utilizada"
+              ? "✓ Proposta transmitida"
+              : s.status === "aprovada" && s.ressalva
+                ? "⚠ Aprovada com ressalva"
+                : st.label}
           </span>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
@@ -77,7 +81,18 @@ function Detalhe({ id }: { id: string }) {
           <dt className="text-gray-500">Verba</dt>
           <dd>{s.categoria ? `★ Desconto especial: ${s.categoria}` : "Automóvel"}</dd>
           <dt className="text-gray-500">Valor</dt>
-          <dd className="font-medium tabular-nums">{formatBRL(s.valor)}</dd>
+          <dd className="font-medium tabular-nums">
+            {s.valor_aprovado ? (
+              <>
+                {formatBRL(s.valor_aprovado)}{" "}
+                <span className="text-xs font-normal" style={{ color: "#9a5b00" }}>
+                  (aprovado com ressalva · solicitado {formatBRL(s.valor)})
+                </span>
+              </>
+            ) : (
+              formatBRL(s.valor)
+            )}
+          </dd>
           <dt className="text-gray-500">Franqueado</dt>
           <dd>{s.franqueado}</dd>
           <dt className="text-gray-500">Gestor</dt>
@@ -96,7 +111,8 @@ function Detalhe({ id }: { id: string }) {
         {s.status !== "pendente" && (
           <div className="mt-4">
             <p className="text-xs uppercase tracking-wider text-gray-500 mb-1">
-              Resposta do gestor {s.gestor_nome} {s.respondido_em && `· ${formatDateTime(s.respondido_em)}`}
+              {s.ressalva ? "⚠ Ressalva do gestor" : "Resposta do gestor"} {s.gestor_nome}{" "}
+              {s.respondido_em && `· ${formatDateTime(s.respondido_em)}`}
             </p>
             <p
               className="text-sm whitespace-pre-wrap rounded-lg p-3"

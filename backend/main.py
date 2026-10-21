@@ -322,9 +322,10 @@ class SolicitacaoGestorIn(SolicitacaoIn):
 
 
 class RespostaSolicitacao(BaseModel):
-    decisao: Literal["aprovar", "reprovar"]
+    decisao: Literal["aprovar", "reprovar", "ressalva"]  # ressalva = aprovado com ressalva
     resposta: str = ""
     operador: str
+    valor_aprovado: Optional[float] = None  # só na ressalva: pode aprovar valor menor que o pedido
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +591,7 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             continue
         if _eh_teste(s["franqueado"]) and not treino:
             continue
-        v = s["valor_centavos"]
+        v = s.get("valor_aprovado_centavos") or s["valor_centavos"]  # aprovado com ressalva pode ser menor
         if s["status"] == "pendente":
             situacao, efeito = "em_analise", -v
         elif s["status"] == "reprovada":
@@ -611,6 +612,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
             "expira_em": (lanc_por_id.get(s.get("lancamento_id") or "") or {}).get("expira_em") if situacao == "aprovada" else None,
             "pode_transmitir": situacao == "aprovada",
+            "ressalva": bool(s.get("ressalva")),
+            "valor_solicitado": s["valor_centavos"] / 100 if s.get("valor_aprovado_centavos") else None,
             "transmitida_em": s.get("transmitida_em"),
             "expirada_em": s.get("expirada_em"),
             "resposta": s.get("resposta", ""), "respondido_por": s.get("respondido_por", ""),
@@ -989,6 +992,7 @@ def franqueados_lista():
 # ---------------------------------------------------------------------------
 
 SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada",
+                      "ressalva": "Aprovada com ressalva",
                       "expirada": "Desconto expirado"}
 
 
@@ -1008,6 +1012,8 @@ def _solicitacao_view(s: dict, seguradoras: list[dict], gestores: list[dict], la
     gest = next((x for x in gestores if x["id"] == s["gestor_id"]), None)
     out = {k: v for k, v in s.items() if k != "valor_centavos"}
     out["valor"] = s["valor_centavos"] / 100
+    if s.get("valor_aprovado_centavos"):
+        out["valor_aprovado"] = s["valor_aprovado_centavos"] / 100
     out["teste"] = _eh_teste(s["franqueado"])
     out.pop("expira_em", None)
     if s["status"] == "aprovada" and s.get("lancamento_id"):
@@ -1092,7 +1098,8 @@ def list_solicitacoes(_: None = Depends(require_admin)):
     return out
 
 
-def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
+def _decidir(s: dict, aprovar: bool, resposta: str, operador: str, ressalva: bool = False,
+             valor_aprovado_c: Optional[int] = None) -> None:
     """Aplica a decisão do gestor na solicitação (chamar com _lock). Aprovar já
     cria a reserva liberada na conta corrente da seguradora. Quem chama salva
     a lista de solicitações depois."""
@@ -1109,8 +1116,8 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
             "seguradora_id": s["seguradora_id"],
             "tipo": "reserva",
             "status": "aberta",
-            "valor_centavos": s["valor_centavos"],
-            "descricao": descricao,
+            "valor_centavos": valor_aprovado_c or s["valor_centavos"],
+            "descricao": descricao + (" · APROVADO COM RESSALVA" if ressalva else ""),
             "franqueado": s["franqueado"],
             "data": _sol_data(s),  # reserva fica no mês da solicitação
             "operador": operador,
@@ -1124,7 +1131,15 @@ def _decidir(s: dict, aprovar: bool, resposta: str, operador: str) -> None:
         _save(LANCAMENTOS_FILE, lancamentos)
         s["lancamento_id"] = lanc["id"]
     s["status"] = "aprovada" if aprovar else "reprovada"
-    _evento(s, "aprovada" if aprovar else "reprovada", operador, resposta, em=agora)
+    if aprovar and ressalva:
+        s["ressalva"] = True
+        if valor_aprovado_c and valor_aprovado_c != s["valor_centavos"]:
+            s["valor_aprovado_centavos"] = valor_aprovado_c
+    tipo_ev = ("aprovada_ressalva" if ressalva else "aprovada") if aprovar else "reprovada"
+    detalhe_ev = resposta
+    if aprovar and ressalva and valor_aprovado_c and valor_aprovado_c != s["valor_centavos"]:
+        detalhe_ev = f"Valor aprovado R$ {valor_aprovado_c / 100:.2f} de R$ {s['valor_centavos'] / 100:.2f} solicitados. {resposta}"
+    _evento(s, tipo_ev, operador, detalhe_ev, em=agora)
     s["resposta"] = resposta
     s["respondido_por"] = operador
     s["respondido_em"] = agora
@@ -1328,7 +1343,16 @@ def responder_solicitacao(sol_id: str, body: RespostaSolicitacao, _: None = Depe
             raise HTTPException(400, f"Essa solicitação expirou (prazo de {PRAZO_RESERVA_H}h) e o valor já voltou para o saldo")
         if s["status"] != "pendente":
             raise HTTPException(400, "Essa solicitação já foi respondida")
-        _decidir(s, body.decisao == "aprovar", resposta, operador)
+        if body.decisao == "ressalva":
+            if not resposta:
+                raise HTTPException(400, "Escreva a ressalva para o franqueado")
+            pedido_c = s["valor_centavos"]
+            valor_c = _cents(body.valor_aprovado) if body.valor_aprovado else pedido_c
+            if valor_c <= 0 or valor_c > pedido_c:
+                raise HTTPException(400, "O valor aprovado deve ser maior que zero e no máximo o valor solicitado")
+            _decidir(s, True, resposta, operador, ressalva=True, valor_aprovado_c=valor_c)
+        else:
+            _decidir(s, body.decisao == "aprovar", resposta, operador)
         _save(SOLICITACOES_FILE, solicitacoes)
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
 

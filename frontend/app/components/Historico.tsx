@@ -4,6 +4,7 @@ import { formatDateTime } from "../lib/types";
 const ROTULO: Record<string, { txt: string; cor: string }> = {
   criada: { txt: "Pedido registrado", cor: "#072a3c" },
   aprovada: { txt: "Aprovada pelo gestor", cor: "#1d5fb8" },
+  aprovada_ressalva: { txt: "⚠ Aprovada com ressalva", cor: "#9a5b00" },
   transmitida: { txt: "✓ Proposta transmitida", cor: "#1f7a4d" },
   transmissao_desfeita: { txt: "Transmissão desfeita pelo admin", cor: "#b45309" },
   cancelada: { txt: "Reserva cancelada", cor: "#6b7280" },

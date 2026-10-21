@@ -11,6 +11,7 @@ import { getMinhas } from "./lib/minhas";
 import {
   ESPECIAL_COR,
   FRANQUEADO_TESTE,
+  RESSALVA_COR,
   SITUACAO,
   nomeVerba,
   type Especial,
@@ -144,6 +145,11 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
             {m.efeito > 0 ? "+ " : semEfeito ? "" : "− "}
             {formatBRL(m.valor)}
           </p>
+          {m.valor_solicitado && (
+            <p className="text-xs whitespace-nowrap" style={{ color: RESSALVA_COR.cor }}>
+              aprovado de {formatBRL(m.valor_solicitado)} solicitados
+            </p>
+          )}
           <p className="text-xs text-gray-500 whitespace-nowrap">
             {m.categoria ? `Disponível ${m.categoria}` : "Disponível"}: <span className="tabular-nums">{formatBRL(m.saldo_apos)}</span>
           </p>
@@ -153,7 +159,13 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
         <span className="flex flex-wrap gap-2">
           <Badge
             situacao={m.situacao}
-            label={m.situacao === "em_analise" && m.criado_por ? "Reserva · negociação em andamento" : undefined}
+            label={
+              m.situacao === "em_analise" && m.criado_por
+                ? "Reserva · negociação em andamento"
+                : m.ressalva && m.situacao === "aprovada"
+                  ? "⚠ Aprovada com ressalva · aguardando transmissão"
+                  : undefined
+            }
           />
           {m.categoria && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: ESPECIAL_COR.fundo, color: ESPECIAL_COR.cor }}>★ {nomeVerba(m.categoria)}</span>}
           {fila && (
@@ -199,9 +211,16 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
         </p>
       )}
       {m.origem === "solicitacao" && m.situacao !== "em_analise" && (m.resposta || m.respondido_por) && (
-        <p className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap" style={{ background: s.fundo }}>
-          <span className="block text-xs uppercase tracking-wider" style={{ color: s.cor }}>
-            Resposta do gestor {m.gestor_nome}
+        <p
+          className="text-sm rounded-lg px-3 py-2 whitespace-pre-wrap"
+          style={
+            m.ressalva
+              ? { background: RESSALVA_COR.fundo, border: "1px solid #e9c46a" }
+              : { background: s.fundo }
+          }
+        >
+          <span className="block text-xs uppercase tracking-wider" style={{ color: m.ressalva ? RESSALVA_COR.cor : s.cor }}>
+            {m.ressalva ? "⚠ Ressalva do gestor" : "Resposta do gestor"} {m.gestor_nome}
             {m.respondido_em && ` · ${formatDateTime(m.respondido_em)}`}
           </span>
           {m.resposta || (m.situacao === "reprovada" ? "Não aprovado." : m.situacao === "cancelada" ? "Cancelado." : "Aprovado.")}
@@ -252,7 +271,9 @@ function MinhasSolicitacoes() {
             >
               {s.status === "aprovada" && s.reserva_status === "utilizada"
                 ? "✓ Proposta transmitida"
-                : SOLIC_STATUS[s.status].label}
+                : s.status === "aprovada" && s.ressalva
+                  ? "⚠ Aprovada com ressalva"
+                  : SOLIC_STATUS[s.status].label}
             </span>
             {s.status === "pendente" && s.expira_em && <Prazo expiraEm={s.expira_em} compacto />}
           </Link>
