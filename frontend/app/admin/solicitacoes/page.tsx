@@ -18,6 +18,7 @@ const FILTROS: { v: StatusSolicitacao | "todas"; label: string }[] = [
   { v: "aprovada", label: "Aprovadas" },
   { v: "reprovada", label: "Não aprovadas" },
   { v: "expirada", label: "Expiradas" },
+  { v: "cancelada", label: "Não transmitidas" },
   { v: "todas", label: "Todas" },
 ];
 
@@ -245,7 +246,15 @@ function CardSolicitacao({ s, onRespondida }: { s: Solicitacao; onRespondida: ()
         </div>
       )}
 
-      {s.status === "expirada" ? null : s.status === "pendente" ? (
+      {s.status === "cancelada" && (
+        <p className="text-sm rounded-lg px-3 py-2 mb-3" style={{ background: "#eceef1", color: "#374151" }}>
+          <strong>✕ Proposta não transmitida</strong>
+          {s.nao_transmitida_em && ` em ${formatDateTime(s.nao_transmitida_em)}`} — o franqueado desistiu
+          {s.etapa_cancelada ? ` (o pedido estava ${s.etapa_cancelada})` : ""} e o valor voltou para o Disponível.
+        </p>
+      )}
+
+      {s.status === "expirada" || s.status === "cancelada" ? null : s.status === "pendente" ? (
         <>
           <p className="text-xs mb-2" style={{ color: excede ? "#b42318" : "#555" }}>
             Disponível hoje em {s.seguradora_nome}

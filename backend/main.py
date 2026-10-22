@@ -598,6 +598,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             situacao, efeito = "reprovada", 0
         elif s["status"] == "expirada":
             situacao, efeito = "expirada", 0
+        elif s["status"] == "cancelada":
+            situacao, efeito = "nao_transmitida", 0
         else:
             lanc = lanc_por_id.get(s.get("lancamento_id") or "")
             st = "estornada" if (lanc and lanc.get("estornado")) else (lanc or {}).get("status", "aberta")
@@ -612,6 +614,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
             "nota_gestor": s.get("nota_gestor", ""), "categoria": _cat(s),
             "expira_em": (lanc_por_id.get(s.get("lancamento_id") or "") or {}).get("expira_em") if situacao == "aprovada" else None,
             "pode_transmitir": situacao == "aprovada",
+            "pode_desistir": situacao in ("em_analise", "aprovada"),  # botão "Proposta não transmitida"
+            "nao_transmitida_em": s.get("nao_transmitida_em"),
             "ressalva": bool(s.get("ressalva")),
             "valor_solicitado": s["valor_centavos"] / 100 if s.get("valor_aprovado_centavos") else None,
             "transmitida_em": s.get("transmitida_em"),
@@ -994,7 +998,7 @@ def franqueados_lista():
 # ---------------------------------------------------------------------------
 
 SOLIC_STATUS_LABEL = {"pendente": "Aguardando análise", "aprovada": "Aprovada", "reprovada": "Não aprovada",
-                      "ressalva": "Aprovada com ressalva",
+                      "ressalva": "Aprovada com ressalva", "cancelada": "Proposta não transmitida",
                       "expirada": "Desconto expirado"}
 
 
@@ -1248,6 +1252,39 @@ def marcar_transmitida(sol_id: str):
     return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
 
 
+@app.post("/solicitacoes/{sol_id}/nao-transmitida")
+def marcar_nao_transmitida(sol_id: str):
+    """Franqueado clica em "Proposta não transmitida": desiste do pedido (em
+    análise ou aprovado). O valor sai da Reserva/Aprovado e volta para o
+    Disponível. Fica no histórico."""
+    with _lock:
+        solicitacoes = _load(SOLICITACOES_FILE)
+        s = next((x for x in solicitacoes if x["id"] == sol_id), None)
+        if not s:
+            raise HTTPException(404, "Solicitação não encontrada")
+        lancamentos = _load(LANCAMENTOS_FILE)
+        lanc = _lanc_da_solicitacao(s, lancamentos)
+        aprovada_aberta = s["status"] == "aprovada" and lanc and lanc.get("status") == "aberta" and not lanc.get("estornado")
+        if s["status"] != "pendente" and not aprovada_aberta:
+            raise HTTPException(400, "Só é possível desistir de um pedido em análise ou aprovado (ainda não transmitido)")
+        agora = now_iso()
+        etapa = "em análise" if s["status"] == "pendente" else "aprovado"
+        if aprovada_aberta:
+            lanc["status"] = "cancelada"
+            lanc["status_por"] = f"{s['franqueado']} (painel)"
+            lanc["status_em"] = agora
+            lanc["status_motivo"] = "Proposta não transmitida"
+            lanc["updated_at"] = agora
+            _save(LANCAMENTOS_FILE, lancamentos)
+        s["status"] = "cancelada"
+        s["etapa_cancelada"] = etapa
+        s["nao_transmitida_em"] = agora
+        _evento(s, "nao_transmitida", s["franqueado"],
+                f"Proposta não transmitida (pedido estava {etapa}) — o valor voltou para o Disponível", em=agora)
+        _save(SOLICITACOES_FILE, solicitacoes)
+    return _solicitacao_view(s, _load(SEGURADORAS_FILE), _load(GESTORES_FILE), _load(LANCAMENTOS_FILE))
+
+
 @app.post("/admin/solicitacoes/{sol_id}/desfazer-transmitida")
 def desfazer_transmitida(sol_id: str, body: AcaoOperador, _: None = Depends(require_admin)):
     """Clique errado em "Proposta transmitida": volta para Aprovado (registrado)."""
@@ -1411,7 +1448,7 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         if chave not in por_franq:
             por_franq[chave] = {
                 "franqueado": nome, "utilizado": 0, "reservado": 0, "negocios": 0,
-                "solic_aprovadas": 0, "solic_reprovadas": 0, "solic_pendentes": 0, "solic_expiradas": 0,
+                "solic_aprovadas": 0, "solic_reprovadas": 0, "solic_pendentes": 0, "solic_expiradas": 0, "solic_nao_transmitidas": 0,
                 "por_seguradora": {},
             }
         return por_franq[chave]
@@ -1439,7 +1476,7 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
             continue
         r = linha(s["franqueado"])
         campo = {"aprovada": "solic_aprovadas", "reprovada": "solic_reprovadas", "pendente": "solic_pendentes",
-                 "expirada": "solic_expiradas"}[s["status"]]
+                 "expirada": "solic_expiradas", "cancelada": "solic_nao_transmitidas"}[s["status"]]
         r[campo] += 1
 
     linhas = []

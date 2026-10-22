@@ -22,6 +22,7 @@ interface LinhaRel {
   solic_reprovadas: number;
   solic_pendentes: number;
   solic_expiradas?: number;
+  solic_nao_transmitidas?: number;
   por_seguradora: { seguradora: string; valor: number }[];
 }
 
@@ -209,6 +210,12 @@ function UsoFranqueados() {
                             <>
                               <span className="mx-1.5 text-gray-300">|</span>
                               <span style={{ color: "#6b7280" }}>⌛ {f.solic_expiradas} expirada(s)</span>
+                            </>
+                          )}
+                          {(f.solic_nao_transmitidas ?? 0) > 0 && (
+                            <>
+                              <span className="mx-1.5 text-gray-300">|</span>
+                              <span style={{ color: "#4b5563" }}>✕ {f.solic_nao_transmitidas} não transmitida(s)</span>
                             </>
                           )}
                         </td>

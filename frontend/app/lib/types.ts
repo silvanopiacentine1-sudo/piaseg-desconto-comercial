@@ -76,7 +76,8 @@ export type SituacaoMov =
   | "reservada"
   | "utilizada"
   | "cancelada"
-  | "expirada";
+  | "expirada"
+  | "nao_transmitida";
 
 export interface Movimento {
   id: string;
@@ -107,6 +108,8 @@ export interface Movimento {
   transmitida_em?: string | null;
   ressalva?: boolean;
   valor_solicitado?: number | null;
+  pode_desistir?: boolean;
+  nao_transmitida_em?: string | null;
 }
 
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
@@ -119,6 +122,7 @@ export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: 
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
   cancelada: { label: "Cancelada", cor: "#6b7280", fundo: "#f1f1f1" },
   expirada: { label: "Desconto expirado", cor: "#b42318", fundo: "#fdecea" },
+  nao_transmitida: { label: "Proposta não transmitida", cor: "#4b5563", fundo: "#eceef1" },
 };
 
 const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -151,7 +155,7 @@ export interface Gestor {
   ativo?: boolean;
 }
 
-export type StatusSolicitacao = "pendente" | "aprovada" | "reprovada" | "expirada";
+export type StatusSolicitacao = "pendente" | "aprovada" | "reprovada" | "expirada" | "cancelada";
 
 export interface EventoHistorico {
   em: string;
@@ -190,6 +194,8 @@ export interface Solicitacao {
   etapa_expirada?: "aprovada";
   ressalva?: boolean;
   valor_aprovado?: number;
+  nao_transmitida_em?: string;
+  etapa_cancelada?: string;
 }
 
 export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: string; fundo: string }> = {
@@ -197,6 +203,7 @@ export const SOLIC_STATUS: Record<StatusSolicitacao, { label: string; cor: strin
   aprovada: { label: "Aprovada", cor: "#1d5fb8", fundo: "#e8f0fb" },
   reprovada: { label: "Não aprovada", cor: "#b42318", fundo: "#fdecea" },
   expirada: { label: "Desconto expirado", cor: "#b42318", fundo: "#fdecea" },
+  cancelada: { label: "Proposta não transmitida", cor: "#4b5563", fundo: "#eceef1" },
 };
 
 export const TIPO_LABEL: Record<TipoLancamento, string> = {

@@ -114,6 +114,47 @@ function PropostaTransmitida({ m, onMudou }: { m: Movimento; onMudou: () => void
   );
 }
 
+function PropostaNaoTransmitida({ m, onMudou }: { m: Movimento; onMudou: () => void }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function desistir() {
+    const etapa = m.situacao === "aprovada" ? "Aprovado" : "Reserva";
+    const ok = window.confirm(
+      `Confirma que a proposta ${m.cotacao ? `da cotação ${m.cotacao} ` : ""}(${formatBRL(m.valor)} · ${m.franqueado}) ` +
+        `NÃO será transmitida?\n\nO valor sai de ${etapa} e volta para o Disponível. Não dá para desfazer pelo painel.`,
+    );
+    if (!ok) return;
+    setEnviando(true);
+    setErro("");
+    try {
+      const r = await fetch(`${API}/solicitacoes/${m.id}/nao-transmitida`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "Erro");
+      onMudou();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao marcar");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <button
+        onClick={desistir}
+        disabled={enviando}
+        className="inline-flex items-center gap-2 text-sm font-semibold rounded-lg px-3 py-1.5 cursor-pointer disabled:opacity-60"
+        style={{ background: "#ffffff", color: "#b42318", border: "2px solid #b42318" }}
+        title="O negócio não vai sair: devolve o valor para o Disponível"
+      >
+        <span aria-hidden>✕</span>
+        {enviando ? "Marcando..." : "Proposta não transmitida"}
+      </button>
+      {erro && <span className="text-xs text-red-600">{erro}</span>}
+    </span>
+  );
+}
+
 function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onMudou: () => void }) {
   const s = SITUACAO[m.situacao];
   const titulo =
@@ -181,10 +222,18 @@ function LinhaMovimento({ m, fila, onMudou }: { m: Movimento; fila?: number; onM
           {m.teste && <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ background: "#ede9fe", color: "#5b21b6" }}>🎓 TREINAMENTO</span>}
         </span>
       </div>
-      {m.origem === "solicitacao" && (m.pode_transmitir || m.situacao === "aprovada_utilizada") && (
-        <div>
+      {m.origem === "solicitacao" && (m.pode_transmitir || m.situacao === "aprovada_utilizada" || m.pode_desistir) && (
+        <div className="flex flex-wrap items-start gap-2">
           <PropostaTransmitida m={m} onMudou={onMudou} />
+          {m.pode_desistir && <PropostaNaoTransmitida m={m} onMudou={onMudou} />}
         </div>
+      )}
+      {m.situacao === "nao_transmitida" && (
+        <p className="text-sm rounded-lg px-3 py-2" style={{ background: "#eceef1", color: "#374151" }}>
+          <strong>✕ Proposta não transmitida</strong>
+          {m.nao_transmitida_em && ` em ${formatDateTime(m.nao_transmitida_em)}`}: o franqueado desistiu e o valor voltou
+          para o Disponível.
+        </p>
       )}
       {m.situacao === "expirada" && (
         <p
@@ -595,7 +644,7 @@ export default function PainelPage() {
                       Movimentações
                     </h2>
                     <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                      {(["em_analise", "aprovada", "aprovada_utilizada", "reprovada", "expirada"] as const).map((k) => (
+                      {(["em_analise", "aprovada", "aprovada_utilizada", "reprovada", "expirada", "nao_transmitida"] as const).map((k) => (
                         <span key={k} className="flex items-center gap-1">
                           <span className="w-2.5 h-2.5 rounded-full" style={{ background: SITUACAO[k].cor }} />
                           {SITUACAO[k].label}

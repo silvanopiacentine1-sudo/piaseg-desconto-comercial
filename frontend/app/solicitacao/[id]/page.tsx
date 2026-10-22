@@ -125,6 +125,26 @@ function Detalhe({ id }: { id: string }) {
         {s.status === "aprovada" && s.reserva_status && (
           <p className="text-sm text-gray-600 mt-3">{RESERVA_TEXTO[s.reserva_status]}</p>
         )}
+        {(s.status === "pendente" || (s.status === "aprovada" && s.reserva_status === "aberta")) && (
+          <button
+            onClick={async () => {
+              if (!window.confirm("Confirma que a proposta NÃO será transmitida? O valor volta para o Disponível e isso não pode ser desfeito pelo painel.")) return;
+              const r = await fetch(`${API}/solicitacoes/${s.id}/nao-transmitida`, { method: "POST" });
+              if (r.ok) carregar();
+              else window.alert((await r.json().catch(() => ({}))).detail ?? "Não foi possível marcar.");
+            }}
+            className="mt-3 mr-2 inline-flex items-center gap-2 text-sm font-semibold rounded-lg px-3 py-1.5 cursor-pointer"
+            style={{ background: "#ffffff", color: "#b42318", border: "2px solid #b42318" }}
+          >
+            ✕ Proposta não transmitida
+          </button>
+        )}
+        {s.status === "cancelada" && (
+          <p className="text-sm rounded-lg px-3 py-2 mt-4" style={{ background: "#eceef1", color: "#374151" }}>
+            <strong>✕ Proposta não transmitida</strong>
+            {s.nao_transmitida_em && ` em ${formatDateTime(s.nao_transmitida_em)}`}: o valor voltou para o Disponível.
+          </p>
+        )}
         {s.status === "aprovada" && s.reserva_status === "aberta" && (
           <button
             onClick={async () => {
