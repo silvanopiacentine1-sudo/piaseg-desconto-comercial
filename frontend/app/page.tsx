@@ -429,13 +429,22 @@ export default function PainelPage() {
             </h1>
             <p className="text-white/80 text-sm mt-1">Conta corrente de descontos nas seguradoras</p>
           </div>
-          <Link
-            href={segId ? `/solicitar?seguradora=${segId}` : "/solicitar"}
-            className="rounded-lg px-5 py-2.5 font-semibold text-sm"
-            style={{ background: "#c2a360", color: "#072a3c" }}
-          >
-            + Solicitar reserva de verba
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/como-funciona"
+              className="rounded-lg px-4 py-2.5 font-semibold text-sm"
+              style={{ border: "1px solid #c2a360", color: "#c2a360" }}
+            >
+              📖 Como funciona
+            </Link>
+            <Link
+              href={segId ? `/solicitar?seguradora=${segId}` : "/solicitar"}
+              className="rounded-lg px-5 py-2.5 font-semibold text-sm"
+              style={{ background: "#c2a360", color: "#072a3c" }}
+            >
+              + Solicitar reserva de verba
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -716,7 +725,12 @@ export default function PainelPage() {
         </aside>
       </main>
 
-      <footer className="text-center text-xs text-gray-400 py-6">Piaseg Franchising</footer>
+      <footer className="text-center text-xs text-gray-400 py-6">
+        Piaseg Franchising ·{" "}
+        <Link href="/como-funciona" className="underline">
+          Manual de uso
+        </Link>
+      </footer>
     </>
   );
 }
