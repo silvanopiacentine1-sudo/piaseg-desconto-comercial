@@ -430,13 +430,16 @@ export default function PainelPage() {
             <p className="text-white/80 text-sm mt-1">Conta corrente de descontos nas seguradoras</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/como-funciona"
+            <a
+              href="/Manual-Desconto-Comercial-Piaseg.pdf"
+              target="_blank"
+              rel="noopener"
               className="rounded-lg px-4 py-2.5 font-semibold text-sm"
               style={{ border: "1px solid #c2a360", color: "#c2a360" }}
+              title="Manual de uso em PDF"
             >
-              📖 Como funciona
-            </Link>
+              📖 Manual (PDF)
+            </a>
             <Link
               href={segId ? `/solicitar?seguradora=${segId}` : "/solicitar"}
               className="rounded-lg px-5 py-2.5 font-semibold text-sm"
@@ -727,9 +730,9 @@ export default function PainelPage() {
 
       <footer className="text-center text-xs text-gray-400 py-6">
         Piaseg Franchising ·{" "}
-        <Link href="/como-funciona" className="underline">
-          Manual de uso
-        </Link>
+        <a href="/Manual-Desconto-Comercial-Piaseg.pdf" target="_blank" rel="noopener" className="underline">
+          Manual de uso (PDF)
+        </a>
       </footer>
     </>
   );

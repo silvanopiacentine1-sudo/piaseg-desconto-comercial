@@ -102,7 +102,7 @@ export default function ComoFunciona() {
             </h1>
             <p className="text-white/80 text-sm mt-1">Tudo o que você precisa saber para usar o desconto das seguradoras</p>
           </div>
-          <Link href="/" className="rounded-lg px-4 py-2 font-semibold text-sm" style={{ background: OURO, color: NAVY }}>
+          <Link href="/" className="rounded-lg px-4 py-2 font-semibold text-sm print:hidden" style={{ background: OURO, color: NAVY }}>
             ← Voltar ao painel
           </Link>
         </div>
@@ -381,7 +381,10 @@ export default function ComoFunciona() {
             Ficou alguma dúvida?
           </p>
           <p className="text-sm text-white/85 mb-4">Fale com o seu gestor comercial Piaseg.</p>
-          <Link href="/" className="inline-block rounded-lg px-5 py-2.5 font-semibold text-sm" style={{ background: OURO, color: NAVY }}>
+          <p className="text-sm font-semibold" style={{ color: OURO }}>
+            piaseg-desconto-comercial.vercel.app
+          </p>
+          <Link href="/" className="hidden">
             Ir para o painel
           </Link>
         </div>
