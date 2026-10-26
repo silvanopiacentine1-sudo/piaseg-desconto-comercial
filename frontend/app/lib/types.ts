@@ -1,9 +1,11 @@
-export type TipoLancamento = "credito" | "utilizacao" | "reserva";
+export type TipoLancamento = "credito" | "utilizacao" | "reserva" | "estorno";
 export type StatusReserva = "aberta" | "utilizada" | "cancelada" | "expirada";
 
 export interface Especial {
   categoria: string;
   saldo: number;
+  saldo_bruto?: number;
+  estornado?: number;
   reserva: number;
   em_analise: number;
   liberado: number;
@@ -20,7 +22,9 @@ export interface Resumo {
   ativa: boolean;
   creditos: number;
   utilizado: number;
-  saldo: number;
+  saldo: number; // Saldo Inicial líquido (crédito − estorno da seguradora)
+  saldo_bruto: number; // crédito lançado (admin: "Saldo Inicial")
+  estornado: number; // admin: "Saldo Estornado"
   reserva: number;
   em_analise: number;
   liberado: number;
@@ -77,7 +81,8 @@ export type SituacaoMov =
   | "utilizada"
   | "cancelada"
   | "expirada"
-  | "nao_transmitida";
+  | "nao_transmitida"
+  | "estorno_seguradora";
 
 export interface Movimento {
   id: string;
@@ -114,6 +119,7 @@ export interface Movimento {
 
 export const SITUACAO: Record<SituacaoMov, { label: string; cor: string; fundo: string }> = {
   credito: { label: "Crédito de verba", cor: "#072a3c", fundo: "#e6edf1" },
+  estorno_seguradora: { label: "Ajuste da seguradora", cor: "#7c2d12", fundo: "#fbeee6" },
   em_analise: { label: "Em análise", cor: "#8a6a1f", fundo: "#fbf3e0" },
   aprovada: { label: "Aprovada · aguardando transmissão", cor: "#1d5fb8", fundo: "#e8f0fb" },
   aprovada_utilizada: { label: "✓ Proposta transmitida", cor: "#1f7a4d", fundo: "#e8f3ec" },
@@ -210,6 +216,7 @@ export const TIPO_LABEL: Record<TipoLancamento, string> = {
   credito: "Crédito",
   utilizacao: "Utilização",
   reserva: "Reserva",
+  estorno: "Estorno da seguradora",
 };
 
 export const STATUS_LABEL: Record<StatusReserva, string> = {

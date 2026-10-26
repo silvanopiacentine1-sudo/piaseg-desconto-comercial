@@ -37,6 +37,10 @@ const TIPO_INFO: Record<TipoLancamento, { cor: string; ajuda: string }> = {
     ajuda: "Separa um valor para uma negociação em andamento. Depois você baixa (utilizou) ou cancela (libera).",
   },
   utilizacao: { cor: "#b42318", ajuda: "Desconto já usado, direto, sem reserva prévia (diminui o saldo)." },
+  estorno: {
+    cor: "#7c2d12",
+    ajuda: "Valor que a seguradora estornou (retirou) da verba. É subtraído do Saldo Inicial e aparece no card Saldo Estornado.",
+  },
 };
 
 function Card({ label, v, destaque }: { label: string; v: number; destaque?: boolean }) {
@@ -149,6 +153,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       ? (especiais.find((e) => e.categoria === categoria)?.saldo_a_utilizar ?? 0)
       : (resumo?.saldo_a_utilizar ?? 0);
     if (tipo !== "credito" && resumo && v > disp) {
+      // (vale também para o estorno da seguradora: pode deixar o Disponível negativo)
       const ok = window.confirm(
         `Atenção: ${formatBRL(v)} é maior que o Disponível${categoria ? ` de ${categoria}` : ""} (${formatBRL(disp)}). ` +
           "O saldo vai ficar negativo. Deseja lançar mesmo assim?",
@@ -359,8 +364,9 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               </p>
               <SeletorMes mes={mes} meses={meses} onChange={setMes} todos />
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-              <Card label="Saldo Inicial (verba do mês)" v={resumo.saldo} />
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+              <Card label="Saldo Inicial (verba do mês)" v={resumo.saldo_bruto} />
+              <Card label="− Saldo Estornado" v={resumo.estornado} />
               <Card label="− Reserva" v={resumo.reserva} />
               <Card label="− Aprovado" v={resumo.aprovado} />
               <Card label="− Transmitido" v={resumo.transmitido} />
@@ -419,8 +425,8 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
               <h2 className="font-heading text-lg" style={{ color: "#072a3c" }}>
                 Novo lançamento
               </h2>
-              <div className="grid grid-cols-3 gap-1 rounded-lg p-1" style={{ background: "#f6f6f6" }}>
-                {(["credito", "reserva", "utilizacao"] as TipoLancamento[]).map((t) => (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-lg p-1" style={{ background: "#f6f6f6" }}>
+                {(["credito", "reserva", "utilizacao", "estorno"] as TipoLancamento[]).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -563,7 +569,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                   </datalist>
                 </div>
               )}
-              {tipo !== "credito" && (
+              {(tipo === "reserva" || tipo === "utilizacao") && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Franqueado</label>
                   <input
@@ -602,7 +608,13 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                 <input
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
-                  placeholder={tipo === "credito" ? "Ex.: crédito campanha outubro" : "Ex.: cliente / apólice / proposta"}
+                  placeholder={
+                    tipo === "credito"
+                      ? "Ex.: crédito campanha outubro"
+                      : tipo === "estorno"
+                        ? "Ex.: estorno informado no report da seguradora"
+                        : "Ex.: cliente / apólice / proposta"
+                  }
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 />
               </div>
@@ -735,7 +747,11 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                                 {sinal} {formatBRL(l.valor)}
                               </td>
                               <td className="py-2 pr-3 text-gray-600">
-                                <span className="block text-xs font-bold" style={{ color: ESPECIAL_COR.cor }}>★ {l.categoria}</span>
+                                {l.categoria && (
+                                  <span className="block text-xs font-bold" style={{ color: ESPECIAL_COR.cor }}>
+                                    ★ {l.categoria}
+                                  </span>
+                                )}
                                 {[l.franqueado, l.descricao].filter(Boolean).join(" · ") || "—"}
                                 <span className="block text-xs text-gray-400">
                                   Lançado por <strong className="font-semibold text-gray-600">{l.operador}</strong> em{" "}

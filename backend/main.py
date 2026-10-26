@@ -80,7 +80,8 @@ ADMIN_PASSWORD_SEED = os.getenv("ADMIN_PASSWORD", "")
 #  reserva    — valor separado para um uso previsto; enquanto "aberta" reduz
 #               o "saldo a utilizar"; ao ser baixada vira utilização
 #               (status "utilizada"); se cancelada, libera o valor.
-TIPOS = {"credito", "utilizacao", "reserva"}
+# estorno = a seguradora estornou (retirou) parte da verba; é subtraído do Saldo Inicial
+TIPOS = {"credito", "utilizacao", "reserva", "estorno"}
 
 _lock = threading.Lock()
 
@@ -267,7 +268,7 @@ class SeguradoraIn(BaseModel):
 
 
 class LancamentoIn(BaseModel):
-    tipo: Literal["credito", "utilizacao", "reserva"]
+    tipo: Literal["credito", "utilizacao", "reserva", "estorno"]
     valor: float = Field(gt=0)
     descricao: str = ""
     franqueado: str = ""
@@ -412,7 +413,7 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
     Reserva   = solicitações em análise + reservas manuais em aberto;
     Liberado  = aprovado pelo gestor (reserva de solicitação em aberto) + já utilizado;
     Saldo à utilizar = Saldo − Reserva − Liberado."""
-    creditos = utilizado = reservado = liberado_aberto = em_analise = 0
+    creditos = estornado_seg = utilizado = reservado = liberado_aberto = em_analise = 0
     ultimo = None
     for s in solicitacoes:
         if _eh_teste(s["franqueado"]) and not treino:
@@ -434,6 +435,8 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
             continue
         if l["tipo"] == "credito":
             creditos += l["valor_centavos"]
+        elif l["tipo"] == "estorno":
+            estornado_seg += l["valor_centavos"]
         elif l["tipo"] == "utilizacao":
             utilizado += l["valor_centavos"]
         elif l["tipo"] == "reserva":
@@ -453,13 +456,15 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         "ativa": seguradora.get("ativa", True),
         "creditos": creditos / 100,
         "utilizado": utilizado / 100,
-        "saldo": creditos / 100,
+        "saldo_bruto": creditos / 100,  # verba creditada (admin: "Saldo Inicial")
+        "estornado": estornado_seg / 100,  # admin: "Saldo Estornado" (seguradora retirou)
+        "saldo": (creditos - estornado_seg) / 100,  # Saldo Inicial líquido (é o que o painel público mostra)
         "reserva": reservado / 100,
         "em_analise": em_analise / 100,
         "liberado": liberado / 100,  # = aprovado + transmitido (mantido por compatibilidade)
         "aprovado": liberado_aberto / 100,  # aprovado pelo gestor, aguardando "proposta transmitida"
         "transmitido": utilizado / 100,  # proposta transmitida (ou utilização direta)
-        "saldo_a_utilizar": (creditos - reservado - liberado) / 100,  # "Disponível"
+        "saldo_a_utilizar": (creditos - estornado_seg - reservado - liberado) / 100,  # "Disponível"
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
 
@@ -474,7 +479,8 @@ def _especiais(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dic
     out = []
     for c in sorted(cats, key=str.lower):
         r = _resumo(seguradora, lancamentos, solicitacoes, mes, treino, categoria=c)
-        out.append({"categoria": c, **{k: r[k] for k in ("saldo", "reserva", "em_analise", "liberado", "aprovado", "transmitido", "saldo_a_utilizar")}})
+        out.append({"categoria": c, **{k: r[k] for k in ("saldo", "saldo_bruto", "estornado", "reserva", "em_analise", "liberado", "aprovado",
+                                                  "transmitido", "saldo_a_utilizar")}})
     return out
 
 
@@ -572,6 +578,8 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
         v = l["valor_centavos"]
         if l["tipo"] == "credito":
             situacao, efeito = "credito", v
+        elif l["tipo"] == "estorno":
+            situacao, efeito = "estorno_seguradora", -v
         elif l["tipo"] == "utilizacao":
             situacao, efeito = "utilizada", -v
         else:
@@ -625,7 +633,18 @@ def _movimentos(seg_id: str, lancamentos: list[dict], solicitacoes: list[dict], 
         })
     # a verba do mês é o SALDO INICIAL: créditos vêm sempre primeiro e cada pedido
     # desconta a partir deles, mesmo que a verba tenha sido lançada depois do pedido
-    itens.sort(key=lambda i: (0 if i["situacao"] == "credito" else 1, i["data"], i["ordem"]))
+    itens.sort(key=lambda i: (0 if i["situacao"] in ("credito", "estorno_seguradora") else 1, i["data"], i["ordem"]))
+    # Estorno da seguradora é informação só do admin: no painel público ele não aparece
+    # como linha — o valor é abatido do último crédito da mesma verba (o franqueado vê
+    # o crédito já líquido, igual ao "Saldo Inicial" do card).
+    for est in [i for i in itens if i["situacao"] == "estorno_seguradora"]:
+        creds = [i for i in itens if i["situacao"] == "credito" and i["categoria"] == est["categoria"]]
+        if creds:
+            alvo = creds[-1]
+            alvo["efeito_c"] += est["efeito_c"]
+            alvo["valor"] = round(alvo["valor"] + est["efeito_c"] / 100, 2)
+            itens.remove(est)
+        # sem crédito na verba: mantém a linha (raro) para a conta continuar fechando
     saldos: dict = {}  # cada verba (geral e cada especial) tem seu próprio saldo corrente
     for i in itens:
         efeito = i.pop("efeito_c")
@@ -1460,6 +1479,9 @@ def _relatorio(mes: Optional[str], seguradora_id: Optional[str]) -> dict:
         if l["tipo"] == "credito":
             verba += v
             continue
+        if l["tipo"] == "estorno":
+            verba -= v  # % da verba sobre o valor líquido
+            continue
         if l["tipo"] == "reserva" and l.get("status") in ("cancelada", "expirada"):
             continue  # não virou negócio: não conta como uso
         r = linha(l.get("franqueado", ""))
@@ -1558,8 +1580,8 @@ MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "O
 def _relatorio_verba(ano: int) -> dict:
     seguradoras = _load(SEGURADORAS_FILE)
     lancamentos = _load(LANCAMENTOS_FILE)
-    creditos = [l for l in lancamentos
-                if l["tipo"] == "credito" and not l.get("estornado") and not _eh_teste(l.get("franqueado"))]
+    creditos = [l for l in lancamentos  # créditos e estornos da seguradora (estorno entra negativo: verba líquida)
+                if l["tipo"] in ("credito", "estorno") and not l.get("estornado") and not _eh_teste(l.get("franqueado"))]
     anos = sorted({int(l["data"][:4]) for l in creditos} | {int(_hoje_sp()[:4])}, reverse=True)
     vazio = lambda: [0] * 12  # noqa: E731
     por_seg: dict[str, dict] = {}
@@ -1569,7 +1591,7 @@ def _relatorio_verba(ano: int) -> dict:
         if int(l["data"][:4]) != ano:
             continue
         m = int(l["data"][5:7]) - 1
-        v = l["valor_centavos"]
+        v = l["valor_centavos"] if l["tipo"] == "credito" else -l["valor_centavos"]
         r = por_seg.setdefault(l["seguradora_id"], {"geral": vazio(), "especial": vazio(), "especiais": {}})
         if _cat(l):
             r["especial"][m] += v
@@ -1656,7 +1678,7 @@ def relatorio_verba_export(ano: Optional[int] = None, _: None = Depends(require_
     )
 
 
-TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva"}
+TIPO_LABEL = {"credito": "Crédito", "utilizacao": "Utilização", "reserva": "Reserva", "estorno": "Estorno da seguradora"}
 STATUS_LABEL = {"aberta": "Em aberto", "utilizada": "Utilizada", "cancelada": "Cancelada", "expirada": "Desconto expirado"}
 
 
@@ -1680,11 +1702,12 @@ def export_excel(_: None = Depends(require_admin)):
 
     ws = wb.active
     ws.title = "Saldos"
-    ws.append(["Seguradora", "Situação", "Saldo Inicial", "Reserva", "Aprovado", "Transmitido", "Disponível"])
+    ws.append(["Seguradora", "Situação", "Saldo Inicial", "Saldo Estornado", "Reserva", "Aprovado", "Transmitido",
+               "Disponível"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
-        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo"], r["reserva"], r["aprovado"], r["transmitido"],
-                   r["saldo_a_utilizar"]])
-    for row in ws.iter_rows(min_row=2, min_col=3, max_col=7):
+        ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo_bruto"], r["estornado"], r["reserva"],
+                   r["aprovado"], r["transmitido"], r["saldo_a_utilizar"]])
+    for row in ws.iter_rows(min_row=2, min_col=3, max_col=8):
         for c in row:
             c.number_format = brl
 
