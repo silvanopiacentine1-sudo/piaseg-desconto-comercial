@@ -52,7 +52,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
   const seg = seguradoras.find((s) => s.id === segId);
   const especiais = seg?.especiais ?? [];
   const esp = especiais.find((e) => e.categoria === verba);
-  const disponivel = esp ? esp.saldo_a_utilizar : (seg?.saldo_a_utilizar ?? 0);
+  const disponivel = esp ? esp.disponivel_real : (seg?.disponivel_real ?? 0);
   const v = parseValor(valor);
   const excede = seg && Number.isFinite(v) && v > disponivel;
 
@@ -120,7 +120,7 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
             <option value="">Selecione...</option>
             {seguradoras.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.nome} — disponível {formatBRL(s.saldo_a_utilizar)}
+                {s.nome} — disponível {formatBRL(s.disponivel_real)}
               </option>
             ))}
           </select>
@@ -135,10 +135,10 @@ export default function NovaReserva({ gestores, onCriada, onFechar }: {
             <div className="mt-3">
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — disponível {formatBRL(seg!.disponivel_real)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
-                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
+                    ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.disponivel_real)}
                   </option>
                 ))}
               </select>

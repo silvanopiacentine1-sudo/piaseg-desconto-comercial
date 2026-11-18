@@ -150,8 +150,8 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
       return;
     }
     const disp = categoria
-      ? (especiais.find((e) => e.categoria === categoria)?.saldo_a_utilizar ?? 0)
-      : (resumo?.saldo_a_utilizar ?? 0);
+      ? (especiais.find((e) => e.categoria === categoria)?.disponivel_real ?? 0)
+      : (resumo?.disponivel_real ?? 0);
     if (tipo !== "credito" && resumo && v > disp) {
       // (vale também para o estorno da seguradora: pode deixar o Disponível negativo)
       const ok = window.confirm(
@@ -367,11 +367,17 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
               <Card label="Saldo Inicial (verba do mês)" v={resumo.saldo_bruto} />
               <Card label="− Saldo Estornado" v={resumo.estornado} />
-              <Card label="− Reserva" v={resumo.reserva} />
+              <Card label="Reserva (não desconta)" v={resumo.reserva} />
               <Card label="− Aprovado" v={resumo.aprovado} />
               <Card label="− Transmitido" v={resumo.transmitido} />
-              <Card label="= Disponível" v={resumo.saldo_a_utilizar} destaque />
+              <Card label="= Disponível (real)" v={resumo.disponivel_real} destaque />
             </div>
+            <p className="text-xs text-gray-500 -mt-6 mb-8">
+              No admin o <strong>Disponível</strong> é o saldo real na seguradora: Saldo Inicial − Saldo Estornado − Aprovado
+              − Transmitido (a Reserva <strong>não</strong> é descontada). No painel do franqueado a Reserva continua sendo
+              descontada: lá o Disponível desta seguradora aparece como{" "}
+              <strong>{formatBRL(resumo.saldo_a_utilizar)}</strong>.
+            </p>
             {especiais.length > 0 && (
               <div className="mb-8 -mt-4">
                 <p className="text-xs uppercase tracking-wider mb-2 font-semibold" style={{ color: ESPECIAL_COR.cor }}>
@@ -391,7 +397,7 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                         Saldo Inicial <strong className="tabular-nums">{formatBRL(e.saldo)}</strong>
                       </span>
                       <span>
-                        − Reserva <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>
+                        Reserva (não desconta) <strong className="tabular-nums">{formatBRL(e.reserva)}</strong>
                       </span>
                       <span>
                         − Aprovado <strong className="tabular-nums">{formatBRL(e.aprovado)}</strong>
@@ -401,8 +407,8 @@ export default function SeguradoraPage({ params }: { params: Promise<{ id: strin
                       </span>
                       <span>
                         = Disponível{" "}
-                        <strong className="tabular-nums" style={{ color: e.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}>
-                          {formatBRL(e.saldo_a_utilizar)}
+                        <strong className="tabular-nums" style={{ color: e.disponivel_real < 0 ? "#b42318" : "#072a3c" }}>
+                          {formatBRL(e.disponivel_real)}
                         </strong>
                       </span>
                     </div>

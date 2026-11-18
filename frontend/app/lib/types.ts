@@ -12,6 +12,7 @@ export interface Especial {
   aprovado: number;
   transmitido: number;
   saldo_a_utilizar: number;
+  disponivel_real: number; // admin: sem descontar a Reserva
 }
 
 export interface Resumo {
@@ -30,7 +31,8 @@ export interface Resumo {
   liberado: number;
   aprovado: number;
   transmitido: number;
-  saldo_a_utilizar: number;
+  saldo_a_utilizar: number; // Disponível do painel público (desconta a Reserva)
+  disponivel_real: number; // Disponível do admin (saldo real: NÃO desconta a Reserva)
   atualizado_em: string | null;
 }
 

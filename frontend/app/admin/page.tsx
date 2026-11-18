@@ -60,7 +60,7 @@ export default function AdminPage() {
   }
 
   const ativas = (linhas ?? []).filter((l) => l.ativa);
-  const total = (k: "saldo_bruto" | "estornado" | "reserva" | "aprovado" | "transmitido" | "saldo_a_utilizar") => ativas.reduce((acc, l) => acc + l[k], 0);
+  const total = (k: "saldo_bruto" | "estornado" | "reserva" | "aprovado" | "transmitido" | "disponivel_real") => ativas.reduce((acc, l) => acc + l[k], 0);
 
   return (
     <>
@@ -126,7 +126,7 @@ export default function AdminPage() {
                   <th className="px-4 py-3 font-semibold text-right">Aprovado</th>
                   <th className="px-4 py-3 font-semibold text-right">Transmitido</th>
                   <th className="px-4 py-3 font-semibold text-right" style={{ color: "#d6bd8a" }}>
-                    Disponível
+                    Disponível <span className="font-normal text-xs">(real)</span>
                   </th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -142,7 +142,7 @@ export default function AdminPage() {
                       {!l.ativa && <span className="ml-2 text-xs text-gray-500">(inativa — fora do painel)</span>}
                       {(l.especiais ?? []).map((e) => (
                         <span key={e.categoria} className="block text-xs font-semibold mt-1" style={{ color: "#9a3412" }}>
-                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · disponível {formatBRL(e.saldo_a_utilizar)}
+                          ★ {e.categoria}: verba {formatBRL(e.saldo)} · disponível {formatBRL(e.disponivel_real)}
                         </span>
                       ))}
                     </td>
@@ -153,9 +153,9 @@ export default function AdminPage() {
                     <td className="px-4 py-3 text-right tabular-nums text-gray-600">{formatBRL(l.transmitido)}</td>
                     <td
                       className="px-4 py-3 text-right tabular-nums font-bold"
-                      style={{ color: l.saldo_a_utilizar < 0 ? "#b42318" : "#072a3c" }}
+                      style={{ color: l.disponivel_real < 0 ? "#b42318" : "#072a3c" }}
                     >
-                      {formatBRL(l.saldo_a_utilizar)}
+                      {formatBRL(l.disponivel_real)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
@@ -186,7 +186,7 @@ export default function AdminPage() {
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("aprovado"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{formatBRL(total("transmitido"))}</td>
                     <td className="px-4 py-3 text-right tabular-nums" style={{ color: "#072a3c" }}>
-                      {formatBRL(total("saldo_a_utilizar"))}
+                      {formatBRL(total("disponivel_real"))}
                     </td>
                     <td></td>
                   </tr>

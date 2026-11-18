@@ -485,7 +485,9 @@ def _resumo(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dict] 
         "liberado": liberado / 100,  # = aprovado + transmitido (mantido por compatibilidade)
         "aprovado": liberado_aberto / 100,  # aprovado pelo gestor, aguardando "proposta transmitida"
         "transmitido": utilizado / 100,  # proposta transmitida (ou utilização direta)
-        "saldo_a_utilizar": (creditos - estornado_seg - reservado - liberado) / 100,  # "Disponível"
+        "saldo_a_utilizar": (creditos - estornado_seg - reservado - liberado) / 100,  # "Disponível" do PAINEL PÚBLICO
+        # "Disponível" do ADMIN: saldo real na seguradora — NÃO desconta a Reserva (pedidos em análise)
+        "disponivel_real": (creditos - estornado_seg - liberado) / 100,
         "atualizado_em": ultimo or seguradora.get("created_at"),
     }
 
@@ -501,7 +503,7 @@ def _especiais(seguradora: dict, lancamentos: list[dict], solicitacoes: list[dic
     for c in sorted(cats, key=str.lower):
         r = _resumo(seguradora, lancamentos, solicitacoes, mes, treino, categoria=c)
         out.append({"categoria": c, **{k: r[k] for k in ("saldo", "saldo_bruto", "estornado", "reserva", "em_analise", "liberado", "aprovado",
-                                                  "transmitido", "saldo_a_utilizar")}})
+                                                  "transmitido", "saldo_a_utilizar", "disponivel_real")}})
     return out
 
 
@@ -1138,13 +1140,12 @@ def list_solicitacoes(_: None = Depends(require_admin)):
         v = _solicitacao_view(s, seguradoras, gestores, lancamentos)
         v["data"] = _sol_data(s)
         if s["status"] == "pendente" and s["seguradora_id"] in segs:
-            # saldo do mês da solicitação, sem contar ela mesma (que já está "em análise")
+            # saldo REAL do mês da verba (admin: não desconta a Reserva, então o próprio pedido não pesa)
             chave = (s["seguradora_id"], v["data"][:7], _cat(s))
             if chave not in cache:
                 cache[chave] = _resumo(segs[s["seguradora_id"]], lancamentos, solicitacoes, chave[1],
-                                       categoria=chave[2])["saldo_a_utilizar"]
-            proprio = 0 if _eh_teste(s["franqueado"]) else s["valor_centavos"] / 100  # teste não está no saldo real
-            v["saldo_a_utilizar_atual"] = round(cache[chave] + proprio, 2)
+                                       categoria=chave[2])["disponivel_real"]
+            v["saldo_a_utilizar_atual"] = round(cache[chave], 2)
         out.append(v)
     return out
 
@@ -1729,11 +1730,11 @@ def export_excel(_: None = Depends(require_admin)):
     ws = wb.active
     ws.title = "Saldos"
     ws.append(["Seguradora", "Situação", "Saldo Inicial", "Saldo Estornado", "Reserva", "Aprovado", "Transmitido",
-               "Disponível"])
+               "Disponível (real, sem reserva)", "Disponível no painel do franqueado"])
     for r in sorted((_resumo(s, lancamentos, _load(SOLICITACOES_FILE)) for s in seguradoras), key=lambda r: r["nome"].lower()):
         ws.append([r["nome"], "Ativa" if r["ativa"] else "Inativa", r["saldo_bruto"], r["estornado"], r["reserva"],
-                   r["aprovado"], r["transmitido"], r["saldo_a_utilizar"]])
-    for row in ws.iter_rows(min_row=2, min_col=3, max_col=8):
+                   r["aprovado"], r["transmitido"], r["disponivel_real"], r["saldo_a_utilizar"]])
+    for row in ws.iter_rows(min_row=2, min_col=3, max_col=9):
         for c in row:
             c.number_format = brl
 
