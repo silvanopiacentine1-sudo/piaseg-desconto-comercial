@@ -399,10 +399,31 @@ def _cat(x: dict) -> str:
     return (x.get("categoria") or "").strip()
 
 
+def _chave_cat(c: str) -> str:
+    """Chave para comparar nomes de produto ignorando maiúsculas, acentos e plural simples."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", c or "").encode("ascii", "ignore").decode().lower()
+    palavras = [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in t.split()]
+    return " ".join(palavras)
+
+
+def _produtos_conhecidos() -> list[str]:
+    """Todos os produtos (descontos especiais) já usados em qualquer seguradora."""
+    nomes = {_cat(x) for x in _load(LANCAMENTOS_FILE) + _load(SOLICITACOES_FILE) if _cat(x)}
+    return sorted(nomes, key=str.lower)
+
+
 def _norm_cat(c: str) -> str:
     c = " ".join((c or "").split())
     if len(c) > 60:
         raise HTTPException(400, "Nome do desconto especial muito longo (máx. 60 caracteres)")
+    if c:
+        # reaproveita a grafia já usada ("maquina agricola" → "Máquinas agrícolas"),
+        # para o mesmo produto não virar duas verbas diferentes
+        chave = _chave_cat(c)
+        for existente in _produtos_conhecidos():
+            if _chave_cat(existente) == chave:
+                return existente
     return c
 
 
@@ -548,6 +569,9 @@ def painel(mes: Optional[str] = None, treino: bool = False):
     return {
         "mes": mes or "todos",
         "meses": _meses_disponiveis(lancamentos, solicitacoes),
+        # produtos de desconto especial já usados (sugestão no formulário de pedido)
+        "produtos": sorted({_cat(x) for x in lancamentos + solicitacoes if _cat(x) and not _eh_teste(x.get("franqueado"))},
+                           key=str.lower),
         "seguradoras": [{**{k: r[k] for k in _CAMPOS_PUBLICOS}, "especiais": esp[r["id"]]} for r in linhas],
         "totais": {
             "saldo": round(sum(r["saldo"] for r in linhas), 2),
@@ -823,9 +847,11 @@ def get_seguradora(seg_id: str, mes: Optional[str] = None, _: None = Depends(req
         "resumo": _resumo(seg, lancamentos, solicitacoes, mes),
         "especiais": _especiais(seg, lancamentos, solicitacoes, mes),
         # todos os produtos especiais já usados nesta seguradora (para sugerir no formulário)
-        "categorias": sorted({_cat(l) for l in lancamentos if l["seguradora_id"] == seg_id and _cat(l)}, key=str.lower),
+        # inclui produtos pedidos pelos franqueados que ainda não têm verba (para o assessor lançar o crédito)
+        "categorias": sorted({_cat(x) for x in lancamentos + solicitacoes if x["seguradora_id"] == seg_id and _cat(x)},
+                             key=str.lower),
         # produtos especiais usados em qualquer seguradora (sugestão ao criar um novo: Empresarial, Condomínio...)
-        "categorias_todas": sorted({_cat(l) for l in lancamentos if _cat(l)}, key=str.lower),
+        "categorias_todas": sorted({_cat(x) for x in lancamentos + solicitacoes if _cat(x)}, key=str.lower),
         "lancamentos": extrato,
     }
 

@@ -8,6 +8,7 @@ import { API } from "../lib/api";
 import { addMinha } from "../lib/minhas";
 import { FRANQUEADO_TESTE, formatBRL, parseValor, type Gestor, type PainelPublico, type Solicitacao } from "../lib/types";
 
+const OUTRO = "__outro__"; // "Outro produto (digitar)" no campo De qual verba?
 const FRANQ_KEY = "desconto_franqueado";
 
 function Formulario() {
@@ -20,6 +21,8 @@ function Formulario() {
 
   const [seguradoraId, setSeguradoraId] = useState(params.get("seguradora") ?? "");
   const [verba, setVerba] = useState(params.get("verba") ?? ""); // "" = geral; senão, desconto especial
+  const [outroProduto, setOutroProduto] = useState(""); // produto que a seguradora ainda não tem verba
+  const [produtos, setProdutos] = useState<string[]>([]); // sugestões (produtos já usados na rede)
   const [valor, setValor] = useState("");
   const [franqueado, setFranqueado] = useState("");
   const [gestorId, setGestorId] = useState("");
@@ -41,6 +44,7 @@ function Formulario() {
     ])
       .then(([p, g, f]) => {
         setSeguradoras(p.seguradoras);
+        setProdutos(Array.isArray(p.produtos) ? p.produtos : []);
         setGestores(g);
         setFranqueados(Array.isArray(f) ? f : []);
       })
@@ -51,8 +55,9 @@ function Formulario() {
   const seg = seguradoras.find((s) => s.id === seguradoraId);
   const especiais = seg?.especiais ?? [];
   const esp = especiais.find((e) => e.categoria === verba);
+  const pedindoOutro = verba === OUTRO;
   // disponível da verba escolhida (geral ou o desconto especial)
-  const disponivel = esp ? esp.saldo_a_utilizar : seg?.saldo_a_utilizar;
+  const disponivel = pedindoOutro ? 0 : esp ? esp.saldo_a_utilizar : seg?.saldo_a_utilizar;
   const v = parseValor(valor);
 
   async function enviar(e: React.FormEvent) {
@@ -60,6 +65,10 @@ function Formulario() {
     setErro("");
     if (!Number.isFinite(v) || v <= 0) {
       setErro("Informe um valor válido maior que zero (ex.: 1.500,00).");
+      return;
+    }
+    if (pedindoOutro && !outroProduto.trim()) {
+      setErro("Digite o produto/ramo para o qual você precisa de desconto.");
       return;
     }
     setEnviando(true);
@@ -74,7 +83,7 @@ function Formulario() {
           gestor_id: gestorId,
           observacao,
           cotacao,
-          categoria: esp ? verba : "",
+          categoria: pedindoOutro ? outroProduto.trim() : esp ? verba : "",
         }),
       });
       const data = await res.json();
@@ -136,20 +145,47 @@ function Formulario() {
             )}
           </div>
 
-          {especiais.length > 0 && (
+          {seg && (
             <div>
               <label className="block text-sm font-medium mb-1">De qual verba? *</label>
               <select value={verba} onChange={(e) => setVerba(e.target.value)} className={input}>
-                <option value="">Automóvel — disponível {formatBRL(seg!.saldo_a_utilizar)}</option>
+                <option value="">Automóvel — disponível {formatBRL(seg.saldo_a_utilizar)}</option>
                 {especiais.map((e) => (
                   <option key={e.categoria} value={e.categoria}>
                     ★ Desconto especial: {e.categoria} — disponível {formatBRL(e.saldo_a_utilizar)}
                   </option>
                 ))}
+                <option value={OUTRO}>➕ Outro produto (digitar)</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Desconto especial é para um produto específico e tem saldo próprio, separado do Automóvel.
-              </p>
+              {pedindoOutro ? (
+                <div className="mt-2 rounded-lg p-3" style={{ background: "#fff1e8", border: "1px solid #fdba74" }}>
+                  <input
+                    value={outroProduto}
+                    onChange={(e) => setOutroProduto(e.target.value)}
+                    list="produtos-rede"
+                    maxLength={60}
+                    placeholder="Digite o produto/ramo (ex.: Máquinas agrícolas)"
+                    className={input}
+                    required
+                  />
+                  <datalist id="produtos-rede">
+                    {produtos
+                      .filter((p) => !especiais.some((e) => e.categoria === p))
+                      .map((p) => (
+                        <option key={p} value={p} />
+                      ))}
+                  </datalist>
+                  <p className="text-xs mt-2" style={{ color: "#9a3412" }}>
+                    Esta seguradora ainda não tem verba para esse produto. Seu pedido vai para o gestor, que solicita o
+                    desconto junto à seguradora.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">
+                  Desconto especial é para um produto específico e tem saldo próprio, separado do Automóvel. Não achou o
+                  produto? Escolha &quot;Outro produto&quot;.
+                </p>
+              )}
             </div>
           )}
 
@@ -163,7 +199,7 @@ function Formulario() {
               className={input}
               required
             />
-            {seg && Number.isFinite(v) && v > (disponivel ?? 0) && (
+            {seg && !pedindoOutro && Number.isFinite(v) && v > (disponivel ?? 0) && (
               <p className="text-xs text-amber-700 mt-1">
                 O valor é maior que o Disponível desta seguradora. Você pode enviar, mas a aprovação depende do gestor.
               </p>
